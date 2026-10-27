@@ -1,0 +1,14 @@
+{
+  "name": "كناش — دفتر الطلبيات والأرباح",
+  "short_name": "كناش",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "./kanach.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F3F1EC",
+  "theme_color": "#12463F",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

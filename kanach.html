@@ -9,7 +9,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <style>
 :root{
   --font:'IBM Plex Sans Arabic','Segoe UI',Tahoma,'Noto Naskh Arabic',system-ui,sans-serif;
@@ -318,6 +321,38 @@ section[id^="sec-"]>b:first-child,.card.pad>b:first-child{font-size:15.5px}
 .track .seg4{width:84px}
 .track .tl2{flex:none}
 .track .raw{min-width:0}
+
+/* ---------- v4: calculator, call list, fees ---------- */
+@media (min-width:1000px){#btnSettings{display:none}}
+.calc-grid{display:grid;gap:14px}
+@media (min-width:1000px){.calc-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start;gap:22px}}
+.answer{position:relative;overflow:hidden;border-radius:var(--r-l);padding:20px 22px;color:#F2F5F3;background:linear-gradient(160deg,#16524A 0%,#0E3A34 100%)}
+[data-theme="dark"] .answer{background:linear-gradient(160deg,#173F38 0%,#0D2622 100%)}
+.answer .lbl{font-size:13px;opacity:.8}
+.answer .big{font-size:clamp(34px,7vw,46px);font-weight:700;line-height:1.15;margin:4px 0 2px;color:#fff}
+.answer .big.neg{color:#FFB4A8}
+.answer .big .cur{color:rgba(255,255,255,.6);font-size:15px}
+.answer .eq{margin-top:10px}
+.verdict{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border-radius:var(--r-m);border:1px solid var(--line);background:var(--card)}
+.verdict .ico{width:42px;height:42px}
+.verdict b{display:block;font-size:15px}
+.meter{position:relative;height:10px;border-radius:5px;background:linear-gradient(to left,var(--loss) 0%,var(--wait) 45%,var(--profit) 100%);margin:12px 0 4px;opacity:.9}
+.meter i{position:absolute;top:-4px;width:4px;height:18px;border-radius:2px;background:var(--ink);margin-inline-start:-2px;box-shadow:0 0 0 2px var(--card)}
+.meter s{position:absolute;top:-3px;width:0;height:16px;border-inline-start:2px dashed var(--ink-2)}
+.meter-l{display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-3)}
+.wt{width:100%;border-collapse:collapse;font-size:13px}
+.wt th{font-weight:600;color:var(--ink-3);text-align:start;padding:8px 6px;font-size:12px;border-bottom:1px solid var(--line-2);position:sticky;top:0;background:var(--card)}
+.wt td{padding:8px 6px;border-bottom:1px solid var(--line)}
+.wt td.n,.wt th.n{text-align:end}
+.wt tr.cur td{background:var(--brand-soft)}
+.wt-wrap{max-height:420px;overflow:auto}
+.call{display:flex;gap:12px;align-items:center;padding:14px 16px}
+.call .grow b{display:block;font-size:14.5px}
+.call .msgp{font-size:12.5px;color:var(--ink-2);margin-top:6px;padding:8px 10px;border-radius:10px;background:var(--sunk);white-space:pre-wrap;line-height:1.6}
+a.btn{text-decoration:none}
+.btn.wa{background:#1F8B4C;border-color:#1F8B4C;color:#fff}
+.custwarn{margin-top:-2px;margin-bottom:12px}
+.parsed{display:flex;gap:6px;flex-wrap:wrap;margin:-4px 0 12px}
 </style>
 </head>
 <body>
@@ -328,6 +363,7 @@ section[id^="sec-"]>b:first-child,.card.pad>b:first-child{font-size:15.5px}
     <button class="iconbtn" data-act="carrier-sync" id="btnCarrier" aria-label="تحديث حالة الطلبيات من شركة التوصيل" title="تحديث من شركة التوصيل"></button>
     <button class="iconbtn" data-act="go" data-tab="settings" data-sub="cloud" id="btnCloud" aria-label="حالة المزامنة السحابية" title="المزامنة السحابية"></button>
     <button class="iconbtn" data-act="theme" id="btnTheme" aria-label="تبديل المظهر"></button>
+    <button class="iconbtn" data-act="go" data-tab="settings" id="btnSettings" aria-label="الإعدادات" title="الإعدادات"></button>
   </div>
 </header>
 <div class="wrap"><main id="view" tabindex="-1"></main></div>
@@ -394,6 +430,8 @@ const ICONS = {
   box:'<path d="M3 8l9-4 9 4v9l-9 4-9-4z"/><path d="M3 8l9 4 9-4M12 12v9"/>', clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/>',
   info:'<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8v.01"/>', key:'<circle cx="8" cy="15" r="3.5"/><path d="M10.5 12.5 19 4M16 7l2 2M14 9l2 2"/>',
   bolt:'<path d="M13 3 5 13h6l-1 8 8-10h-6z"/>', chev:'<path d="m9 6 6 6-6 6"/>', link:'<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3A4 4 0 0 0 11 18.7l1-1"/>',
+  calc:'<rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M8.5 7h7M8.5 11h.01M12 11h.01M15.5 11h.01M8.5 14.5h.01M12 14.5h.01M15.5 14.5v3M8.5 17.5h.01M12 17.5h.01"/>',
+  wa:'<path d="M4 20l1.3-4A8 8 0 1 1 8 18.7z"/><path d="M9 9.5c0 3 2.5 5.5 5.5 5.5l1-1.5-2-1-1 .8a4 4 0 0 1-2-2l.8-1-1-2z"/>',
   wallet:'<path d="M4 7h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M4 7l11-3v3M16 13.5h.01"/>'
 };
 const ic = (n, s = 20) => `<svg class="ic" viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ''}</svg>`;
@@ -403,36 +441,88 @@ const LS = {
   settings:'kanach_settings_v1', carrier:'kanach_carrier_v1', theme:'theme', apiKey:'claude_api_key',
   jbId:'jsonbin_id', jbKey:'jsonbin_key', device:'device_id', lastChange:'local_last_change', draft:'kanach_last_vonder', cloudSeen:'kanach_cloud_seen'
 };
-const DEFAULT_SETTINGS = { appName:'كناش', adsPaused:true, defPrice:11700, defProfit:1048, defSeller:1150, defTaxe:250, soundAlert:true, browserNotif:false };
+const DEFAULT_SETTINGS = { appName:'كناش', adsPaused:true, defPrice:11700, defProfit:1048, defSeller:1150, defTaxe:250, soundAlert:true, browserNotif:false,
+  appFeePct:6, fixedFee:400, originWilaya:'Oran', feePayer:'unset', defShip:'home', assumeRate:80, callScript:true };
 const DEFAULT_CARRIER  = { provider:'yalidine', apiId:'', apiToken:'', proxy:'', auto:true, interval:30, netMode:'est', extraFixed:0, extraPct:0, lastSync:null, log:[], undo:null };
 
 const readJSON = (k, fb) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } };
 const writeJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } };
 
-const S = { entries: [], budgetExp: [], budgets: {}, settings: { ...DEFAULT_SETTINGS }, carrier: { ...DEFAULT_CARRIER } };
+/* ---- التخزين: IndexedDB (بلا حدّ 5MB)، مع رجوع إلى localStorage إذا لم يتوفر ---- */
+const IDB = {
+  db: null,
+  open() {
+    return new Promise(res => {
+      try {
+        const r = indexedDB.open('kanach', 1);
+        r.onupgradeneeded = () => r.result.createObjectStore('kv');
+        r.onsuccess = () => { this.db = r.result; res(true); };
+        r.onerror = r.onblocked = () => res(false);
+      } catch { res(false); }
+    });
+  },
+  tx(mode, fn) {
+    return new Promise((res, rej) => { const t = this.db.transaction('kv', mode), st = t.objectStore('kv'), out = fn(st); t.oncomplete = () => res(out && out.result); t.onerror = t.onabort = () => rej(t.error); });
+  },
+  get(k) { return this.tx('readonly', st => st.get(k)); },
+  setMany(obj) { return this.tx('readwrite', st => { Object.entries(obj).forEach(([k, v]) => st.put(v, k)); }); }
+};
+const DATA_KEYS = { entries: LS.entries, budgetExp: LS.budgetExp, budgets: LS.budgets, deleted: 'kanach_deleted', deletedB: 'kanach_deletedB' };
+
+const S = { entries: [], budgetExp: [], budgets: {}, deleted: {}, deletedB: {}, settings: { ...DEFAULT_SETTINGS }, carrier: { ...DEFAULT_CARRIER } };
 const ui = {
   tab:'home', period:'month', filter:'all', search:'', limit:40, rTab:'summary', rPeriod:'month', crmQ:'', crmF:'all',
-  review:null, syncing:false, cloud:'idle', cloudMsg:'', chat:[], setSub:'', budgetMonth:iso().slice(0, 7), openSetup:null
+  review:null, syncing:false, cloud:'idle', cloudMsg:'', chat:[], setSub:'', budgetMonth:iso().slice(0, 7), openSetup:null, calc:null
 };
 
-function loadAll() {
-  let e = readJSON(LS.entries, null);
-  if (!Array.isArray(e)) {
-    const old = readJSON('dailyEntries', []);
-    e = Array.isArray(old) ? old.map(x => ({ ...x, status: x.status || (['vonder','sonazone'].includes(x.type) ? 'delivered' : 'completed'), myProfit: x.myProfit || x.amount || 0 })) : [];
+async function loadAll() {
+  let d = null;
+  if (await IDB.open()) {
+    try { const e = await IDB.get('entries'); if (Array.isArray(e)) d = { entries: e, budgetExp: await IDB.get('budgetExp'), budgets: await IDB.get('budgets'), deleted: await IDB.get('deleted'), deletedB: await IDB.get('deletedB') }; } catch {}
   }
-  S.entries = e;
-  S.budgetExp = readJSON(LS.budgetExp, []); if (!Array.isArray(S.budgetExp)) S.budgetExp = [];
-  S.budgets = readJSON(LS.budgets, {}) || {};
+  if (!d) {
+    let e = readJSON(LS.entries, null);
+    if (!Array.isArray(e)) {
+      const old = readJSON('dailyEntries', []);
+      e = Array.isArray(old) ? old.map(x => ({ ...x, status: x.status || (['vonder','sonazone'].includes(x.type) ? 'delivered' : 'completed'), myProfit: x.myProfit || x.amount || 0 })) : [];
+    }
+    d = { entries: e, budgetExp: readJSON(LS.budgetExp, []), budgets: readJSON(LS.budgets, {}), deleted: readJSON(DATA_KEYS.deleted, {}), deletedB: readJSON(DATA_KEYS.deletedB, {}) };
+    if (IDB.db) { try { await IDB.setMany(d); localStorage.setItem('kanach_idb', '1'); } catch {} }
+  }
+  S.entries = Array.isArray(d.entries) ? d.entries : [];
+  S.budgetExp = Array.isArray(d.budgetExp) ? d.budgetExp : [];
+  S.budgets = d.budgets || {}; S.deleted = d.deleted || {}; S.deletedB = d.deletedB || {};
   S.settings = { ...DEFAULT_SETTINGS, ...(readJSON(LS.settings, {}) || {}) };
   S.carrier  = { ...DEFAULT_CARRIER,  ...(readJSON(LS.carrier, {}) || {}) };
+  if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
+  resetSigs();
+}
+
+/* ---- تتبّع التغييرات لكل حركة: updatedAt + شواهد الحذف، لتُدمج المزامنة بدل أن تستبدل ---- */
+const SIG = { e: new Map(), b: new Map() };
+const sigOf = x => { const { updatedAt, ...r } = x; return JSON.stringify(r); };
+function resetSigs() { SIG.e = new Map(S.entries.map(x => [x.id, sigOf(x)])); SIG.b = new Map(S.budgetExp.map(x => [x.id, sigOf(x)])); }
+function stamp(list, sigs, tombs, now) {
+  const seen = new Set();
+  for (const x of list) { seen.add(x.id); const g = sigOf(x); if (sigs.get(x.id) !== g) { x.updatedAt = now; sigs.set(x.id, g); delete tombs[x.id]; } }
+  for (const id of [...sigs.keys()]) if (!seen.has(id)) { sigs.delete(id); tombs[id] = now; }
+  const cut = new Date(Date.now() - 90 * 864e5).toISOString();
+  Object.keys(tombs).forEach(id => { if (tombs[id] < cut) delete tombs[id]; });
+}
+let saveQ = Promise.resolve();
+function writeLocal() {
+  const snap = { entries: S.entries, budgetExp: S.budgetExp, budgets: S.budgets, deleted: S.deleted, deletedB: S.deletedB };
+  if (IDB.db) { saveQ = saveQ.then(() => IDB.setMany(snap)).catch(() => toast('تعذّر الحفظ في قاعدة المتصفح. حمّل نسخة احتياطية الآن.', { tone:'bad' })); return true; }
+  const ok = Object.entries(DATA_KEYS).every(([k, lk]) => writeJSON(lk, snap[k]));
+  if (!ok) toast('تعذّر الحفظ: مساحة المتصفح ممتلئة. حمّل نسخة احتياطية الآن.', { tone:'bad' });
+  return ok;
 }
 let cloudHook = () => {};
 function persist() {
-  const ok = writeJSON(LS.entries, S.entries);
-  writeJSON(LS.budgetExp, S.budgetExp); writeJSON(LS.budgets, S.budgets);
-  if (!ok) toast('تعذّر الحفظ: مساحة المتصفح ممتلئة. حمّل نسخة احتياطية الآن.', {tone:'bad'});
-  localStorage.setItem(LS.lastChange, new Date().toISOString());
+  const now = new Date().toISOString();
+  stamp(S.entries, SIG.e, S.deleted, now); stamp(S.budgetExp, SIG.b, S.deletedB, now);
+  writeLocal();
+  localStorage.setItem(LS.lastChange, now);
   cloudHook();
 }
 const saveSettings = () => writeJSON(LS.settings, S.settings);
@@ -441,12 +531,18 @@ function commit() { persist(); render(); }
 
 const isOrder = e => e.type === 'vonder' || e.type === 'sonazone';
 
-function calcVonder({ price, qty, myProfit, extra, seller }) {
+/* سعر التطبيق = (سعر المنتج × الكمية) + عمولة % + حماية ثابتة + إضافي + فائدتي؛ سعر الزبون = سعر التطبيق + فائدة البائع.
+   رسوم التوصيل: إن كنتَ أنت من يتحملها (feePayer = 'me') تُخصم من فائدتك؛ إن كان الزبون يدفعها فوق السعر فلا تمسّ فائدتك. */
+function calcVonder({ price, qty, myProfit, extra, seller, fee = 0, payer = S.settings.feePayer }) {
   const p = num(price), q = Math.max(1, parseInt(qty) || 1), mp = num(myProfit), ex = num(extra), sl = num(seller);
-  const subtotal = p * q, appFee = subtotal * 0.06, fixedFee = 400;
+  const pct = num(S.settings.appFeePct) / 100, fixedFee = num(S.settings.fixedFee);
+  const subtotal = p * q, appFee = subtotal * pct;
   const totalCost = subtotal + appFee + fixedFee + ex;
   const totalProfit = mp * q, finalPrice = totalCost + totalProfit, sellPrice = finalPrice + sl;
-  return { price:p, qty:q, subtotal, appFee, fixedFee, extra:ex, totalCost, myProfit:mp, totalProfit, seller:sl, finalPrice, sellPrice };
+  const delivery = num(fee), feeCut = payer === 'me' ? delivery : 0;
+  const customerPays = sellPrice + (payer === 'customer' ? delivery : 0);
+  return { price:p, qty:q, subtotal, appFee, appFeePct: pct * 100, fixedFee, extra:ex, totalCost, myProfit:mp, totalProfit, seller:sl, finalPrice, sellPrice,
+    delivery, feeCut, netProfit: totalProfit - feeCut, customerPays };
 }
 const realProfit = (net, totalCost, seller) => num(net) - num(totalCost) - num(seller);
 
@@ -529,7 +625,21 @@ function rateCustomer(c) {
   if (c.delivered >= 1) return { k:'good', t:'جيّد', tone:'pos' };
   return { k:'new', t:'جديد', tone:'info' };
 }
-const waLink = p => { const d = String(p || '').replace(/\D/g, ''); if (!d) return ''; const n = d.startsWith('213') ? d : d.replace(/^0/, '213'); return `https://wa.me/${n}`; };
+let CUST_CACHE = null;
+const phoneKey = p => String(p || '').replace(/\D/g, '').slice(-9);
+const phoneOfEntry = e => e.yalidineInfo?.phone || e.ship?.phone || ((e.desc || '').match(/0\d{9}/) || [''])[0];
+function custIndex() {
+  if (CUST_CACHE) return CUST_CACHE;
+  const m = new Map(); buildCustomers().forEach(c => { const k = phoneKey(c.phone); if (k.length === 9) m.set(k, c); });
+  return (CUST_CACHE = m);
+}
+/* زبون له سوابق مرتجع؟ ← { c, r } أو null */
+function riskyCustomer(phone) {
+  const k = phoneKey(phone); if (k.length !== 9) return null;
+  const c = custIndex().get(k); if (!c) return null;
+  const r = rateCustomer(c); return ['bad', 'banned'].includes(r.k) ? { c, r } : null;
+}
+const waLink = (p, text) => { const d = String(p || '').replace(/\D/g, ''); if (!d) return ''; const n = d.startsWith('213') ? d : d.replace(/^0/, '213'); return `https://wa.me/${n}${text ? '?text=' + encodeURIComponent(text) : ''}`; };
 
 const YAL_FEES = {"1": {"n": "Adrar", "home": 1400, "express": 1400}, "2": {"n": "Chlef", "home": 850, "express": 850}, "3": {"n": "Laghouat", "home": 1000, "express": 1000}, "4": {"n": "Oum El Bouaghi", "home": 850, "express": 850}, "5": {"n": "Batna", "home": 850, "express": 850}, "6": {"n": "Béjaïa", "home": 850, "express": 850}, "7": {"n": "Biskra", "home": 1000, "express": 1000}, "8": {"n": "Béchar", "home": 1400, "express": 1400}, "9": {"n": "Blida", "home": 650, "express": 650}, "10": {"n": "Bouira", "home": 850, "express": 850}, "11": {"n": "Tamanrasset", "home": 1600, "express": 1600}, "12": {"n": "Tébessa", "home": 1000, "express": 1000}, "13": {"n": "Tlemcen", "home": 850, "express": 850}, "14": {"n": "Tiaret", "home": 850, "express": 850}, "15": {"n": "Tizi Ouzou", "home": 850, "express": 850}, "16": {"n": "Alger", "home": 500, "express": 500}, "17": {"n": "Djelfa", "home": 1000, "express": 1000}, "18": {"n": "Jijel", "home": 850, "express": 850}, "19": {"n": "Sétif", "home": 850, "express": 850}, "20": {"n": "Saïda", "home": 850, "express": 850}, "21": {"n": "Skikda", "home": 850, "express": 850}, "22": {"n": "Sidi Bel Abbès", "home": 850, "express": 850}, "23": {"n": "Annaba", "home": 850, "express": 850}, "24": {"n": "Guelma", "home": 850, "express": 850}, "25": {"n": "Constantine", "home": 850, "express": 850}, "26": {"n": "Médéa", "home": 850, "express": 850}, "27": {"n": "Mostaganem", "home": 850, "express": 850}, "28": {"n": "M'Sila", "home": 850, "express": 850}, "29": {"n": "Mascara", "home": 850, "express": 850}, "30": {"n": "Ouargla", "home": 1000, "express": 1000}, "31": {"n": "Oran", "home": 850, "express": 850}, "32": {"n": "El Bayadh", "home": 1400, "express": 1400}, "33": {"n": "Illizi", "home": 1600, "express": 1600}, "34": {"n": "Bordj Bou Arreridj", "home": 850, "express": 850}, "35": {"n": "Boumerdès", "home": 650, "express": 650}, "36": {"n": "El Tarf", "home": 850, "express": 850}, "37": {"n": "Tindouf", "home": 1600, "express": 1600}, "38": {"n": "Tissemsilt", "home": 850, "express": 850}, "39": {"n": "El Oued", "home": 1000, "express": 1000}, "40": {"n": "Khenchela", "home": 850, "express": 850}, "41": {"n": "Souk Ahras", "home": 850, "express": 850}, "42": {"n": "Tipaza", "home": 650, "express": 650}, "43": {"n": "Mila", "home": 850, "express": 850}, "44": {"n": "Aïn Defla", "home": 850, "express": 850}, "45": {"n": "Naâma", "home": 1400, "express": 1400}, "46": {"n": "Aïn Témouchent", "home": 850, "express": 850}, "47": {"n": "Ghardaïa", "home": 1000, "express": 1000}, "48": {"n": "Relizane", "home": 850, "express": 850}, "49": {"n": "Timimoun", "home": 1400, "express": 1400}, "50": {"n": "Bordj Badji Mokhtar", "home": 1600, "express": 1600}, "51": {"n": "Ouled Djellal", "home": 1000, "express": 1000}, "52": {"n": "Béni Abbès", "home": 1450, "express": 1450}, "53": {"n": "In Salah", "home": 1600, "express": 1600}, "54": {"n": "In Guezzam", "home": 1800, "express": 1800}, "55": {"n": "Touggourt", "home": 1000, "express": 1000}, "56": {"n": "Djanet", "home": 1800, "express": 1800}, "57": {"n": "El M'Ghair", "home": 1000, "express": 1000}, "58": {"n": "El Menia", "home": 1000, "express": 1000}};
 const YAL_DESK = {"1": 700, "2": 550, "3": 700, "4": 550, "5": 550, "6": 550, "7": 700, "8": 700, "9": 400, "10": 550, "11": 1200, "12": 700, "13": 550, "14": 550, "15": 550, "16": 400, "17": 700, "18": 550, "19": 550, "20": 550, "21": 550, "22": 550, "23": 550, "24": 550, "25": 550, "26": 550, "27": 550, "28": 550, "29": 550, "30": 700, "31": 550, "32": 700, "33": 1200, "34": 550, "35": 400, "36": 550, "37": 1200, "38": 550, "39": 700, "40": 550, "41": 550, "42": 400, "43": 550, "44": 550, "45": 700, "46": 550, "47": 700, "48": 550, "49": 700, "50": 700, "51": 700, "52": 700, "53": 1200, "54": 1200, "55": 700, "56": 1200, "57": 700, "58": 700};
@@ -557,6 +667,84 @@ function rankNames(text, items, getName) {
 }
 const feeFor = (wid, type) => type === 'desk' ? (YAL_DESK[wid] || 0) : (YAL_FEES[wid]?.home || 0);
 
+const AR_W = ['','أدرار','الشلف','الأغواط','أم البواقي','باتنة','بجاية','بسكرة','بشار','البليدة','البويرة','تمنراست','تبسة','تلمسان','تيارت','تيزي وزو','الجزائر','الجلفة','جيجل','سطيف','سعيدة','سكيكدة','سيدي بلعباس','عنابة','قالمة','قسنطينة','المدية','مستغانم','المسيلة','معسكر','ورقلة','وهران','البيض','إليزي','برج بوعريريج','بومرداس','الطارف','تندوف','تيسمسيلت','الوادي','خنشلة','سوق أهراس','تيبازة','ميلة','عين الدفلى','النعامة','عين تموشنت','غرداية','غليزان','تيميمون','برج باجي مختار','أولاد جلال','بني عباس','عين صالح','عين قزام','تقرت','جانت','المغير','المنيعة'];
+const WIDS = Object.keys(YAL_FEES).map(Number);
+const wLabel = wid => wid ? `${wid} — ${AR_W[wid]}` : '';
+const arKey = t => norm(t).replace(/[\u064B-\u065F\u0670]/g, '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/^ال/, '').replace(/ ال/g, ' ');
+const W_CACHE = new Map();
+/* «16»، «Alger»، «الجزائر»، «wilaya d'Oran»، «31 - وهران» ← رقم الولاية (أو 0) */
+function wilayaIdOf(text, strict = false) {
+  const t = String(text || '').trim(); if (!t) return 0;
+  const ck = (strict ? '!' : '') + t; if (W_CACHE.has(ck)) return W_CACHE.get(ck);
+  let id = 0;
+  const m = t.match(/^\s*0?(\d{1,2})(?!\d)/); if (m && YAL_FEES[+m[1]]) id = +m[1];
+  if (!id) { const k = arKey(t); id = WIDS.find(w => arKey(AR_W[w]) === k || norm(YAL_FEES[w].n) === norm(t)) || 0; }
+  if (!id) { // اسم ولاية داخل نص أطول — الأطول أولاً حتى لا تبتلع «الوادي» «عين الدفلى» وما شابه
+    const k = ' ' + arKey(t) + ' ', lt = ' ' + norm(t).replace(/[^a-z ]/g, ' ') + ' ';
+    const cands = WIDS.flatMap(w => [[w, ' ' + arKey(AR_W[w]) + ' ', k], [w, ' ' + norm(YAL_FEES[w].n).replace(/[^a-z ]/g, ' ') + ' ', lt]]).sort((a, b) => b[1].length - a[1].length);
+    const hit = cands.find(([, n, hay]) => n.trim().length >= 3 && hay.includes(n)); if (hit) id = hit[0];
+  }
+  if (!id && !strict) { const r = rankNames(t, WIDS, w => YAL_FEES[w].n)[0]; if (r && r.score >= 0.8) id = r.item; }
+  W_CACHE.set(ck, id); return id;
+}
+const wilayaOfEntry = e => wilayaIdOf(e.ship?.wilaya || e.yalidineInfo?.wilaya || '');
+/* رسوم التوصيل لطلبية: الحقيقية من Yalidine إن وُجدت، وإلا من جدول الأسعار حسب الولاية ونوع التوصيل */
+function feeOf(e) {
+  if (e.carrier?.deliveryFee > 0) return e.carrier.deliveryFee;
+  const w = wilayaOfEntry(e); return w ? feeFor(w, e.ship?.type || S.settings.defShip) : 0;
+}
+const feeCutOf = e => S.settings.feePayer === 'me' && e.type === 'vonder' ? feeOf(e) : 0;
+const grossOf = e => e.grossProfit ?? (e.type === 'vonder' ? num(e.myProfit) * (e.quantity || 1) : e.amount);
+/* بعد تغيير «من يدفع التوصيل» أو إضافة الولاية: أعِد حساب الفائدة المتوقعة للطلبيات المعلّقة */
+function recomputePending() {
+  let n = 0;
+  S.entries.forEach(e => {
+    if (e.type !== 'vonder' || e.status !== 'pending' || e.isActualProfit) return;
+    const g = grossOf(e), a = g - feeCutOf(e);
+    if (e.grossProfit == null) e.grossProfit = g;
+    if (Math.round(a) !== Math.round(e.amount)) { e.amount = a; e.expectedProfit = a; n++; }
+  });
+  return n;
+}
+
+/* ---- نسبة التسليم: للولاية إن كانت فيها 5 طلبيات محسومة فأكثر، وإلا العامة، وإلا الافتراض من الإعدادات ---- */
+let RATE_CACHE = null;
+function rateTable() {
+  if (RATE_CACHE) return RATE_CACHE;
+  const by = {}; let d = 0, r = 0;
+  S.entries.forEach(e => {
+    if (!isOrder(e) || !['delivered', 'returned'].includes(e.status)) return;
+    const w = wilayaOfEntry(e), x = by[w] || (by[w] = { d: 0, r: 0 });
+    if (e.status === 'delivered') { x.d++; d++; } else { x.r++; r++; }
+  });
+  return (RATE_CACHE = { by, d, r });
+}
+function deliveryRate(wid) {
+  const t = rateTable(), x = t.by[wid];
+  if (wid && x && x.d + x.r >= 5) return { rate: x.d / (x.d + x.r), n: x.d + x.r, src: 'wilaya' };
+  if (t.d + t.r >= 5) return { rate: t.d / (t.d + t.r), n: t.d + t.r, src: 'global' };
+  return { rate: Math.min(100, Math.max(1, num(S.settings.assumeRate))) / 100, n: 0, src: 'assumed' };
+}
+const RATE_SRC = { wilaya: 'من سجل هذه الولاية', global: 'المعدل العام لطلبياتك', assumed: 'افتراض من الإعدادات' };
+/* القيمة المتوقعة للطلبية = احتمال التسليم × الفائدة − احتمال المرتجع × Taxe retour */
+const expectedValue = (profit, rate, taxe) => rate * profit - (1 - rate) * taxe;
+const breakEvenRate = (profit, taxe) => profit + taxe > 0 ? taxe / (profit + taxe) : 1;
+
+/* ---- معايرة: هل Yalidine يخصم رسوم التوصيل من المبلغ؟ نقارن طلبيات Net مؤكد ---- */
+function calibrateFees() {
+  const med = a => { if (!a.length) return 0; const b = [...a].sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
+  const rows = S.entries.filter(e => e.type === 'vonder' && e.status === 'delivered' && e.isActualProfit && ['excel', 'api', 'manual'].includes(netSourceOf(e)) && e.sellPrice > 0 && e.netClient > 0)
+    .map(e => { const w = wilayaOfEntry(e), fee = e.carrier?.deliveryFee || (w ? feeFor(w, e.ship?.type || 'home') : 0); return { gap: e.sellPrice - e.netClient, fee }; })
+    .filter(x => x.fee > 0);
+  if (rows.length < 3) return { n: rows.length, verdict: 'few' };
+  const gap = med(rows.map(x => x.gap)), fee = med(rows.map(x => x.fee));
+  const meRest = med(rows.map(x => x.gap - x.fee)), custRest = gap;
+  const verdict = Math.abs(meRest) <= Math.abs(custRest) ? 'me' : 'customer';
+  const rest = verdict === 'me' ? meRest : custRest;
+  return { n: rows.length, gap, fee, verdict, rest: Math.round(rest), clean: Math.abs(rest) <= Math.max(60, 0.15 * fee) };
+}
+
+let SAME_ORIGIN_PROXY = false; // true عندما يُفتح كناش من الوسيط المحلي نفسه (http://localhost:8787)
 class CarrierError extends Error { constructor(kind, msg, status) { super(msg); this.kind = kind; this.status = status; } }
 
 const pick = (o, ...keys) => { for (const k of keys) if (o && o[k] !== undefined && o[k] !== null && o[k] !== '') return o[k]; return undefined; };
@@ -580,6 +768,7 @@ const Carrier = {
   /* تصحيح رابط الوسيط تلقائياً في حال إضافة مسارات مثل /wilayas/ بالخطأ */
   base() {
     let p = (S.carrier.proxy || '').trim();
+    if (!p && SAME_ORIGIN_PROXY) return location.origin;
     if (!p) return 'https://api.yalidine.app/v1';
     p = p.replace(/\/+(wilayas|parcels|histories|communes|centers)\b.*$/i, '');
     p = p.replace(/\/+$/, '');
@@ -617,7 +806,7 @@ const Carrier = {
   wilayas() { return this.listAll('/wilayas/'); },
   /* الوسيط المحلي القديم لا يمرّر POST — نتحقق قبل الرفع */
   async checkProxy() {
-    const p = (S.carrier.proxy || '').trim(); if (!p) return true;
+    const p = (S.carrier.proxy || '').trim(); if (!p && !SAME_ORIGIN_PROXY) return true;
     let j = null; try { const r = await fetch(this.base() + '/__kanach'); j = await r.json(); } catch {}
     if (!j || !j.post) throw new CarrierError('proxy', 'الوسيط المحلي عندك قديم ولا يدعم الرفع. استبدل ملف kanach-proxy.js بالنسخة الجديدة، أغلق نافذة الأمر القديمة، ثم شغّله من جديد: node kanach-proxy.js');
     return true;
@@ -695,7 +884,8 @@ function deriveNet(p) {
   if (p.netExact > 0) return { net: p.netExact, src: p.source === 'excel' ? 'excel' : 'api' };
   const c = S.carrier;
   if (p.source === 'excel' || c.netMode === 'none' || !(p.price > 0)) return { net: 0, src: '' };
-  const net = p.price - p.deliveryFee - num(c.extraFixed) - p.price * num(c.extraPct) / 100;
+  const feeCut = S.settings.feePayer === 'customer' ? 0 : p.deliveryFee; // إن كان الزبون يدفع التوصيل فوق السعر، لا يُخصم من مستحقك
+  const net = p.price - feeCut - num(c.extraFixed) - p.price * num(c.extraPct) / 100;
   return { net: Math.max(0, net), src: 'est' };
 }
 
@@ -751,7 +941,7 @@ function applyChanges(changes, { source = 'api' } = {}) {
 
 const VONDER_BOOKMARKLET = "javascript:(async function(){ var sleep=function(ms){return new Promise(function(r){setTimeout(r,ms)})}; var num=function(t){return +(String(t).replace(/[^\\d]/g,''))||0}; var strip=function(s){return String(s).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase()}; var rows=[],refs=[]; document.querySelectorAll('tr').forEach(function(tr){ var td=tr.querySelectorAll(':scope>td'); if(td.length<5) return; var m=td[0].innerText.match(/#?(\\d{5,})/); if(!m) return; var prices=(td[1].innerText.match(/\\d[\\d\\s.,]*\\s*DZD/gi)||[]).map(num); var st=td[2].innerText.split(/\\n+/).map(function(x){return x.trim()}).filter(Boolean); var cl=td[3].innerText.split(/\\n+/).map(function(x){return x.trim()}).filter(Boolean); var ph='';cl.forEach(function(x){if(!ph&&/^0\\d{8,9}$/.test(x.replace(/\\s/g,'')))ph=x.replace(/\\s/g,'')}); var other=cl.filter(function(x){return x.replace(/\\s/g,'')!==ph}); rows.push({id:m[1],prices:prices,status:st,name:other[0]||'',phone:ph,wilaya:other[1]||'',seller:num(td[4].innerText)}); refs.push(tr); }); if(!rows.length){alert('لم أجد طلبيات في هذه الصفحة.');return} var box=document.createElement('div'); box.style.cssText='position:fixed;z-index:999999;top:12px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:10px 18px;border-radius:10px;font:14px sans-serif;direction:rtl'; document.body.appendChild(box); var findModal=function(id){var best=null;document.querySelectorAll('div,section,dialog').forEach(function(d){var t=d.innerText||'';if(t.indexOf('Informations client')>-1&&t.indexOf(id)>-1&&d.offsetParent!==null){if(!best||t.length<best.innerText.length)best=d}});return best}; var closeModal=function(m){ var node=m,x=null; for(var i=0;i<4&&node&&!x;i++){node=node.parentElement;if(!node)break; node.querySelectorAll('button,a,span,div,i').forEach(function(el){if(el.offsetParent&&/^[×xX✕✖]$/.test((el.innerText||'').trim()))x=el})} if(x)x.click();else document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',keyCode:27,bubbles:true})); }; var ok=function(r){var s=strip(r.status.join(' '));return /confirme avec le client/.test(s)&&!/annul/.test(s)}; var todo=rows.map(function(r,i){return i}).filter(function(i){return ok(rows[i])}); var failed=0; for(var k=0;k<todo.length;k++){ var i=todo[k],r=rows[i],tr=refs[i]; box.textContent='كناش: قراءة تفاصيل '+(k+1)+' / '+todo.length; var cell=tr.querySelector(':scope>td:last-child'); var btn=cell.querySelector('a,button,[onclick],i,img,svg')||cell; btn.click(); var m=null; for(var w=0;w<50&&!m;w++){await sleep(100);m=findModal(r.id)} if(!m){failed++;continue} var t=m.innerText,g=function(re){var x=t.match(re);return x?x[1].trim():''}; var d={client:g(/Client\\s*:\\s*([^\\n]+)/),phone:g(/l[eé]phone\\s*:\\s*([\\d\\s+]+)/).replace(/\\s/g,''),wilaya:g(/wilaya de\\s*:\\s*([^\\n]+)/),commune:g(/commune\\s*:\\s*([^\\n]+)/),address:g(/adresse\\s*:\\s*([^\\n]+)/),delivery:g(/Type de livraison\\s*:\\s*\\n?\\s*([^\\n]+)/),sale:num(g(/Prix de vente\\s*:\\s*\\n?\\s*([\\d\\s]+)/)),fee:num(g(/Prix de livraison\\s*:\\s*\\n?\\s*([\\d\\s]+)/)),product:'',qty:1}; var trs=m.querySelectorAll('table tr'); if(trs.length>1){var c=trs[1].querySelectorAll('td');if(c.length>1){d.product=(c[0].innerText||'').trim();d.qty=num(c[1].innerText)||1}} r.detail=d; closeModal(m);await sleep(300); if(findModal(r.id)){failed++;break} } box.remove(); var out=JSON.stringify({kanach:'vonder',v:2,rows:rows}); var done=function(){alert('كناش: تم نسخ '+rows.length+' طلبية'+(failed?' (تعذّرت قراءة تفاصيل '+failed+')':'')+'. افتح كناش > الإعدادات والصقها.')}; (navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(out).then(done):Promise.reject()).catch(function(){prompt('انسخ هذا النص (Ctrl+C) ثم الصقه في كناش:',out)}); })();";
 function importVonder(rows) {
-  const out = { added:0, dup:0, skipped:0 }, now = new Date().toISOString(), myP = num(S.settings.defProfit);
+  const out = { added:0, dup:0, skipped:0, risky:0 }, now = new Date().toISOString(), myP = num(S.settings.defProfit);
   rows.forEach(r => {
     const st = norm((r.status || []).join(' '));
     if (!/confirme avec le client/.test(st) || /annule/.test(st)) { out.skipped++; return; }
@@ -772,6 +962,8 @@ function importVonder(rows) {
       totalCost, finalPrice, sellPrice: client, netClient: 0, expectedProfit: myP, isActualProfit: false, netSource:'', sonaBuyPrice:0, sonaSellPrice:0, sonaQuantity:1,
       yalidineInfo: { clientName: name, phone, wilaya: r.wilaya || '', commune:'' } });
     if (dt?.product) S.entries[0].product = String(dt.product).slice(0, 80);
+    const ne = S.entries[0]; ne.grossProfit = myP; ne.amount = ne.expectedProfit = myP - feeCutOf(ne);
+    if (riskyCustomer(phone)) out.risky++;
     out.added++;
   });
   return out;
@@ -813,10 +1005,12 @@ function pushRowHTML(r, i) {
   const e = r.e, sh = e.ship, c = r.communes[r.cIdx];
   const opts = r.communes.length ? (r.rank ? r.rank.map(x => x.item) : r.communes) : [];
   const fee = feeFor(r.wil?.id, r.type), desk = r.type === 'desk';
+  const rc = riskyCustomer(sh.phone);
   const flag = r.cIdx < 0 ? `<span class="neg">اختر البلدية</span>` : (r.sugg >= 0.99 ? '' : `<span style="color:#b7791f">تخمين — تأكد من البلدية</span>`);
   return `<div class="card pad-s" style="margin-bottom:10px;${r.on ? '' : 'opacity:.92'}">
     <label class="sw" style="gap:10px"><input type="checkbox" data-pf="on" data-i="${i}" ${r.on ? 'checked' : ''} ${r.cIdx < 0 || (desk && !r.centerId) ? 'disabled' : ''}><div class="tx"><b>${esc(sh.name || e.desc)}</b><span class="ltr">${esc(sh.phone)} • #${esc(e.vonderId)}</span></div><b class="n">${fmtNum(sh.price)} دج</b></label>
     <div class="sub" style="margin:4px 0">${esc(sh.product || '—')}</div>
+    ${rc ? `<div class="note bad" style="margin:6px 0">${ic('alert', 18)}<div>زبون <b>${rc.r.t}</b>: ${rc.c.returned} مرتجع من ${rc.c.orders} طلبية. أكّد معه بالهاتف قبل الإرسال.</div></div>` : ''}
     <div class="two"><label class="field"><span>الولاية ${sh.wilaya ? '(' + esc(sh.wilaya) + ')' : ''}</span><select data-pf="wil" data-i="${i}"><option value="">— اختر —</option>${(r.wilList || []).map(w => `<option value="${esc(w.id)}" ${r.wil && String(r.wil.id) === String(w.id) ? 'selected' : ''}>${esc(w.id)} — ${esc(w.name)}</option>`).join('')}</select></label>
     <label class="field"><span>نوع التوصيل</span><select data-pf="type" data-i="${i}"><option value="home" ${!desk ? 'selected' : ''}>للمنزل</option><option value="desk" ${desk ? 'selected' : ''}>مكتب (Stop desk)</option></select></label></div>
     <label class="field"><span>البلدية عند Yalidine ${sh.communeFV ? `— عند البائع: «${esc(sh.communeFV)}»` : ''} ${flag}</span><select data-pf="commune" data-i="${i}"><option value="-1">— اختر —</option>${opts.map(x => `<option value="${r.communes.indexOf(x)}" ${r.communes.indexOf(x) === r.cIdx ? 'selected' : ''}>${esc(x.name)}${x.is_deliverable === false ? ' (غير مخدومة)' : ''}</option>`).join('')}</select></label>
@@ -846,7 +1040,7 @@ async function pushChange(el) {
 }
 function buildParcel(r) {
   const e = r.e, sh = e.ship, [fn, ln] = splitName(sh.name || e.desc), c = r.communes[r.cIdx];
-  const o = { order_id: e.vonderId, from_wilaya_name: 'Oran', firstname: fn, familyname: ln, contact_phone: normPhone(sh.phone), address: (r.addr || c.name).slice(0, 250),
+  const o = { order_id: e.vonderId, from_wilaya_name: S.settings.originWilaya || 'Oran', firstname: fn, familyname: ln, contact_phone: normPhone(sh.phone), address: (r.addr || c.name).slice(0, 250),
     to_commune_name: c.name, to_wilaya_name: r.wil.name, product_list: (sh.product || 'Produit').slice(0, 200), price: Math.round(sh.price), do_insurance: false, declared_value: Math.round(sh.price), freeshipping: false, is_stopdesk: r.type === 'desk', has_exchange: false };
   if (r.type === 'desk') { o.stopdesk_id = Number(r.centerId) || r.centerId; }
   return o;
@@ -947,7 +1141,7 @@ async function syncCarrier({ manual = true } = {}) {
       const fin = changes.filter(c => ['deliver','return','net','conflict'].includes(c.kind));
       ui.review = fin.length ? { source:'api', changes: fin } : null;
     }
-    S.carrier.lastSync = new Date().toISOString(); S.carrier.lastError = '';
+    S.carrier.lastSync = new Date().toISOString(); S.carrier.lastError = ''; ui.errShown = false;
     S.carrier.log = [{ ts: S.carrier.lastSync, checked: targets.length, missing, ...res, pending: ui.review?.changes.length || 0, manual }, ...(S.carrier.log || [])].slice(0, 20);
     saveCarrier(); persist();
     const bits = []; if (res.delivered) bits.push(`${res.delivered} مُسلَّمة`); if (res.returned) bits.push(`${res.returned} مرتجعة`); if (res.netFixed) bits.push(`${res.netFixed} Net محدَّث`);
@@ -1080,6 +1274,9 @@ const SPECIAL = { s_prep:'تحضير', s_transit:'في الطريق', s_out:'خ�
 function attentionItems() {
   const E = S.entries, out = [];
   const add = (k, tone, icon, t, s) => { const n = E.filter(Q[k]).length; if (n) out.push({ k, tone, icon, t: `${n} ${t}`, s }); };
+  const calls = callList().length;
+  if (calls) out.push({ act: 'call-open', tone: 'neg', icon: 'phone', t: `اتصل اليوم: ${calls} زبون`, s: 'رسائل واتساب جاهزة للفاشلة والخارجة للتسليم والمتأخرة' });
+  if (S.settings.feePayer === 'unset' && S.entries.some(e => e.type === 'vonder')) out.push({ go: 'settings', sub: 'fees', tone: 'wait', icon: 'calc', t: 'حدّد من يدفع رسوم التوصيل', s: 'بدونها تبقى الفائدة المتوقعة غير دقيقة — يمكن معايرتها من طلبياتك' });
   add('risk', 'neg', 'undo', 'طلبية راجعة أو فاشلة التسليم', 'تواصل مع الزبون قبل أن تُرجَع إليك');
   add('mismatch', 'wait', 'alert', 'طلبية مبلغها عند Yalidine يختلف عن سعر الزبون', 'راجع السعر قبل التسليم');
   add('stale', 'wait', 'clock', 'طلبية معلّقة منذ أكثر من 7 أيام', 'تحقّق من حالتها');
@@ -1088,21 +1285,24 @@ function attentionItems() {
   return out;
 }
 
-const TABS = [['home','الرئيسية','home'], ['orders','الطلبيات','list'], ['carrier','التوصيل','truck'], ['reports','التقارير','chart'], ['settings','الإعدادات','sliders']];
-function go(tab, extra = {}) { if (Sheet.isOpen()) Sheet.close(); ui.tab = tab; Object.assign(ui, extra); render(); if (!ui.scrollTo) window.scrollTo({ top: 0 }); }
+const TABS = [['home','الرئيسية','home'], ['orders','الطلبيات','list'], ['calc','الحاسبة','calc'], ['carrier','التوصيل','truck'], ['reports','التقارير','chart']];
+const SIDE_TABS = [...TABS, ['settings','الإعدادات','sliders']];
+function go(tab, extra = {}) { if (Sheet.isOpen()) Sheet.close(); ui.tab = tab; Object.assign(ui, extra); const target = ui.scrollTo; render(); if (!target) window.scrollTo({ top: 0 }); }
 
 function render() {
+  RATE_CACHE = null; CUST_CACHE = null;
   const t = S.settings.appName || 'كناش';
   document.title = t; $('#appName').textContent = t;
   const now = new Date(); $('#appSub').textContent = `${WEEKDAYS[now.getDay()]} ${now.getDate()} ${MONTHS[now.getMonth()]}`;
   const th = document.documentElement.getAttribute('data-theme') === 'dark';
   $('#btnTheme').innerHTML = ic(th ? 'sun' : 'moon');
+  $('#btnSettings').innerHTML = ic('sliders');
   $('#btnCarrier').innerHTML = `<span class="${ui.syncing ? 'spin' : ''}" style="display:grid">${ic('refresh')}</span>`;
   $('#btnCloud').innerHTML = `${ic('cloud')}<i class="dot ${ui.cloud}"></i>`;
   $('#fab').innerHTML = `${ic('plus', 22)}<span>إضافة</span>`;
-  $('#fab').classList.toggle('hide', ui.tab === 'settings');
+  $('#fab').classList.toggle('hide', ui.tab === 'settings' || ui.tab === 'calc');
   const risk = S.entries.filter(Q.risk).length, rv = ui.review?.changes.length || 0;
-  const navHTML = TABS.map(([k, l, i]) => `<button class="tab" data-act="go" data-tab="${k}" ${ui.tab === k ? 'aria-current="page"' : ''}>
+  const navHTML = SIDE_TABS.map(([k, l, i]) => `<button class="tab" data-act="go" data-tab="${k}" ${ui.tab === k ? 'aria-current="page"' : ''}>
     <span class="pill">${ic(i, 21)}</span><span>${l}</span>${k === 'orders' && risk ? `<em class="badge-n">${risk}</em>` : ''}${k === 'carrier' && rv ? `<em class="badge-n">${rv}</em>` : ''}</button>`).join('');
   const side = $('#sideNav'); if (side) side.innerHTML = navHTML;
   const ss = $('#sideStatus');
@@ -1159,16 +1359,17 @@ function viewHome() {
     <div class="card kpi"><div class="v">${money(st.avg)}</div><div class="t">متوسط الفائدة / طلبية</div></div>
     <div class="card kpi"><div class="v ${st.returnRate > 25 ? 'neg' : ''}">${st.orders.length ? Math.round(st.returnRate) + '%' : '—'}</div><div class="t">نسبة المرتجع</div></div>
   </div>`;
+  const attHTML = `
+  ${att.length ? `<div class="sec">تحتاج انتباهك</div><div class="card list">${att.map(a => `<button class="att" ${a.act ? `data-act="${a.act}"` : a.go ? `data-act="go" data-tab="${a.go}" data-sub="${a.sub}"` : `data-act="go" data-tab="orders" data-filter="${a.k}"`}><span class="ico ${a.tone}">${ic(a.icon)}</span><span class="grow"><b>${a.t}</b><span>${a.s}</span></span><span class="go">${ic('chev', 18)}</span></button>`).join('')}</div>` : ''}`;
   const right = `
-  ${att.length ? `<div class="sec">تحتاج انتباهك</div><div class="card list">${att.map(a => `<button class="att" data-act="go" data-tab="orders" data-filter="${a.k}"><span class="ico ${a.tone}">${ic(a.icon)}</span><span class="grow"><b>${a.t}</b><span>${a.s}</span></span><span class="go">${ic('chev', 18)}</span></button>`).join('')}</div>` : ''}
   <div class="sec">آخر 7 أيام</div>
   <div class="card pad-s"><div class="bars" role="img" aria-label="فائدة كل يوم">${week.map(w => { const dh = Math.max(0, w.d) / mx * 100, ph = Math.max(0, w.p) / mx * 100;
     return `<div class="bar"><div class="v">${w.d + w.p > 0 ? fmtNum(w.d + w.p) : ''}</div><div class="stack2"><i class="p" style="height:${ph}%"></i><i class="d" style="height:${dh}%"></i></div><div class="d0">${w.n}</div></div>`; }).join('')}</div>
     <div class="legend"><span><s style="background:var(--profit)"></s>مُسلَّمة</span><span><s style="background:var(--wait-soft);border:1px dashed var(--wait)"></s>معلّقة</span></div></div>`;
   return `<div class="chips" role="group" aria-label="الفترة" style="margin-bottom:12px">${PERIODS.map(([k, l]) => `<button class="chip" data-act="period" data-v="${k}" aria-pressed="${ui.period === k}">${l}</button>`).join('')}</div>
-  <div class="home-grid"><div>${left}</div><div>${kpis}</div></div>
+  <div class="home-grid"><div>${left}</div><div>${att.length ? attHTML : kpis}</div></div>
   <div class="home-full">${pipeHTML}</div>
-  <div class="home-grid"><div>${left2}</div><div>${right}</div></div>`;
+  <div class="home-grid"><div>${left2}</div><div>${att.length ? kpis : ''}${right}</div></div>`;
 }
 
 function stageBadge(e) {
@@ -1189,7 +1390,7 @@ function orderRow(e) {
   return `<button class="oc" data-act="open-entry" data-id="${esc(e.id)}"><span class="main">
     <span class="t">${esc(e.desc)}${qty > 1 ? ` <span class="muted">× ${qty}</span>` : ''}</span>
     <span class="s">${e.product ? `<span>${esc(e.product)}</span>` : ''}${e.tracking ? `<span class="trk">${esc(e.tracking)}</span>` : ''}<span>${fmtDate(e.date)}</span></span>
-    ${trackHTML(e)}<span class="bd">${Q.notrack(e) && !e.fromVonder ? '' : ''}${e.fromVonder && !cleanTrack(e.tracking) ? '<span class="badge info">FreeVendor · لم تُرفع بعد</span>' : ''}${Q.mismatch(e) ? '<span class="badge wait">مبلغ مختلف</span>' : ''}${e.status === 'delivered' && e.type === 'vonder' && est ? '<span class="badge info">Net تقديري</span>' : ''}</span>
+    ${trackHTML(e)}<span class="bd">${Q.notrack(e) && !e.fromVonder ? '' : ''}${e.fromVonder && !cleanTrack(e.tracking) ? '<span class="badge info">FreeVendor · لم تُرفع بعد</span>' : ''}${Q.mismatch(e) ? '<span class="badge wait">مبلغ مختلف</span>' : ''}${e.status === 'pending' && riskyCustomer(phoneOfEntry(e)) ? '<span class="badge neg">زبون له مرتجعات</span>' : ''}${e.status === 'delivered' && e.type === 'vonder' && est ? '<span class="badge info">Net تقديري</span>' : ''}</span>
   </span><span class="amt ${cls}" ${e.status === 'returned' ? 'style="text-decoration:line-through"' : ''}>${money(e.amount, true)}<small>${kind}</small></span></button>`;
 }
 function filteredEntries() {
@@ -1259,15 +1460,133 @@ function viewCarrier() {
   <section class="card pad-s"><div class="sw"><div class="tx"><b>تطبيق التسليم والمرتجع تلقائياً</b><span>عند إيقافه تراجع كل تحديث قبل تطبيقه</span></div><label class="toggle"><input type="checkbox" data-bind="carrier.auto" ${c.auto ? 'checked' : ''} aria-label="تطبيق تلقائي"><i></i></label></div>
     <div class="sw"><div class="tx"><b>تحديث دوري أثناء فتح التطبيق</b></div><select style="width:130px" data-bind="carrier.interval" data-num data-render>${[[0, 'يدوي فقط'], [15, 'كل 15 د'], [30, 'كل 30 د'], [60, 'كل ساعة'], [180, 'كل 3 ساعات']].map(([v, l]) => `<option value="${v}" ${num(c.interval) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div></section>
   <section class="card pad"><b>كيف تُحسب فائدتك الصافية؟</b>
-    <div class="note" style="margin-top:10px">${ic('info', 18)}<div>الفائدة = <b>Net Client − التكلفة − فائدة البائع</b>. عندما لا يوفّر Yalidine قيمة Net جاهزة، يحسبها التطبيق: <b>المبلغ − رسوم التوصيل − خصم إضافي</b> ويعلّمها «تقديرية». ملف Excel من Yalidine يستبدلها بالقيمة الحقيقية.</div></div>
-    <div class="field" style="margin-top:12px"><span>طريقة حساب Net من الـAPI</span><select data-bind="carrier.netMode" data-render><option value="est" ${c.netMode === 'est' ? 'selected' : ''}>تقدير: المبلغ − رسوم التوصيل</option><option value="none" ${c.netMode === 'none' ? 'selected' : ''}>لا تحسب — انتظر ملف Excel</option></select></div>
+    <div class="note" style="margin-top:10px">${ic('info', 18)}<div>الفائدة = <b>Net Client − التكلفة − فائدة البائع</b>. عندما لا يوفّر Yalidine قيمة Net جاهزة، يحسبها التطبيق: <b>المبلغ − ${S.settings.feePayer === 'customer' ? '' : 'رسوم التوصيل − '}خصم إضافي</b> ويعلّمها «تقديرية» (حسب إعداد «من يدفع التوصيل»). ملف Excel من Yalidine يستبدلها بالقيمة الحقيقية.</div></div>
+    <div class="field" style="margin-top:12px"><span>طريقة حساب Net من الـAPI</span><select data-bind="carrier.netMode" data-render><option value="est" ${c.netMode === 'est' ? 'selected' : ''}>تقدير تلقائي من مبلغ الطرد</option><option value="none" ${c.netMode === 'none' ? 'selected' : ''}>لا تحسب — انتظر ملف Excel</option></select></div>
     <div class="two"><label class="field"><span>خصم ثابت إضافي (دج)</span><input type="number" inputmode="decimal" data-bind="carrier.extraFixed" data-num value="${num(c.extraFixed)}"></label>
     <label class="field"><span>خصم نسبة (%)</span><input type="number" inputmode="decimal" step="0.1" data-bind="carrier.extraPct" data-num value="${num(c.extraPct)}"></label></div>
-    <small class="muted">قارن أول طلبية مُسلَّمة مع ملف Yalidine، ثم اضبط الخصم الإضافي ليطابق.</small></section>
+    <small class="muted">لا تضبطه يدوياً: بعد 3 طلبيات مؤكدة تقترح <button class="lnk" data-act="go" data-tab="settings" data-sub="fees">المعايرة التلقائية</button> القيمة الصحيحة.</small></section>
   <section class="card pad"><b>ملف Excel من Yalidine</b><div class="sub" style="margin:4px 0 12px">للحصول على Net الحقيقي أو إذا لم تربط الـAPI.</div>
     <label class="btn sec2 block" for="yalFile">${ic('upload', 18)}<span>اختيار ملف Excel</span></label><input id="yalFile" type="file" accept=".xlsx,.xls" hidden></section>
   ${c.log?.length ? `<div class="sec">سجل التحديثات ${c.undo ? `<button class="lnk" data-act="carrier-undo">${'تراجع عن آخر تحديث'}</button>` : ''}</div><div class="card list">${c.log.slice(0, 8).map(l => `<div class="pad-s"><div class="sub">${new Date(l.ts).toLocaleString('ar-DZ', { dateStyle:'short', timeStyle:'short' })}${l.manual === false ? ' • تلقائي' : ''}</div><div style="font-size:13.5px">${fmtLog(l)}</div></div>`).join('')}</div>` : ''}
   </div>`;
+}
+
+/* =====================================================================
+   الحاسبة: ثلاثة أسئلة — كم أربح؟ كم أربح إن بعت بسعر معيّن؟ ما أقصى سعر أشتري به؟
+   ===================================================================== */
+const CALC_MODES = [['fwd', 'كم أربح؟'], ['rev', 'بعت بسعر معيّن'], ['max', 'أقصى سعر للمنتج']];
+function calcState() {
+  if (ui.calc) return ui.calc;
+  const lv = S.entries.find(e => e.type === 'vonder'), s = S.settings;
+  const saved = readJSON('kanach_calc', null);
+  ui.calc = { mode: 'fwd', price: lv?.productPrice || s.defPrice, qty: 1, myProfit: lv?.myProfit || s.defProfit, seller: lv ? (lv.sellerProfit ?? s.defSeller) : s.defSeller,
+    extra: 0, wid: '', type: s.defShip, sell: lv?.sellPrice ? Math.round(lv.sellPrice) : '', target: lv?.myProfit || s.defProfit, ...(saved || {}) };
+  return ui.calc;
+}
+function solveCalc(c, widOverride) {
+  const s = S.settings, q = Math.max(1, parseInt(c.qty) || 1), pct = num(s.appFeePct) / 100, fixed = num(s.fixedFee), ex = num(c.extra), sl = num(c.seller);
+  const wid = widOverride ?? +c.wid, fee = wid ? feeFor(wid, c.type) : 0, feeCut = s.feePayer === 'me' ? fee : 0;
+  let price = num(c.price), mp = num(c.myProfit);
+  if (c.mode === 'rev') { const cost = price * q * (1 + pct) + fixed + ex; mp = (num(c.sell) - sl - cost) / q; }
+  if (c.mode === 'max') { mp = (num(c.target) + feeCut) / q; price = (num(c.sell) - sl - fixed - ex - feeCut - num(c.target)) / (q * (1 + pct)); }
+  const r = calcVonder({ price, qty: q, myProfit: mp, extra: ex, seller: sl, fee });
+  const taxe = num(s.defTaxe), dr = deliveryRate(wid), ev = expectedValue(r.netProfit, dr.rate, taxe), be = breakEvenRate(r.netProfit, taxe);
+  return { ...r, wid, dr, taxe, ev, be, mpPiece: mp };
+}
+function calcVerdict(x) {
+  const pr = Math.round(x.dr.rate * 100), bp = Math.round(x.be * 100);
+  if (x.netProfit <= 0) return { tone: 'neg', icon: 'alert', t: 'خاسرة حتى لو وصلت', s: 'السعر لا يغطي التكلفة' + (x.feeCut ? ' ورسوم التوصيل' : '') + ' وفائدة البائع.' };
+  if (x.ev <= 0) return { tone: 'neg', icon: 'alert', t: 'لا تُرسلها دون تأكيد هاتفي', s: `تحتاج نسبة تسليم ${bp}% على الأقل لتتعادل، ونسبتك هنا ${pr}%.` };
+  if (x.dr.rate - x.be < 0.12) return { tone: 'wait', icon: 'alert', t: 'مربحة بهامش أمان ضيّق', s: `نقطة التعادل ${bp}% ونسبتك ${pr}% — مرتجعان إضافيان يقلبانها خسارة. أكّد العنوان.` };
+  return { tone: 'pos', icon: 'check', t: 'طلبية مربحة', s: `من كل 10 طلبيات مثلها تصل نحو ${Math.round(x.dr.rate * 10)} وترجع ${10 - Math.round(x.dr.rate * 10)}، ويبقى لك في المتوسط ${moneyT(x.ev)} عن كل واحدة.` };
+}
+function calcOutHTML() {
+  const c = calcState(), x = solveCalc(c), v = calcVerdict(x), payer = S.settings.feePayer;
+  const head = c.mode === 'max'
+    ? { l: `أقصى سعر للمنتج (للقطعة) لتربح ${moneyT(num(c.target))}`, big: x.price, chips: [['سعر التطبيق', x.finalPrice], ['سعر الزبون', x.sellPrice]] }
+    : c.mode === 'rev'
+      ? { l: `فائدتك إذا بعت بـ ${moneyT(num(c.sell))}`, big: x.netProfit, chips: [['لكل قطعة', x.mpPiece], ['سعر التطبيق', x.finalPrice]] }
+      : { l: 'فائدتك من هذه الطلبية', big: x.netProfit, chips: [['سعر التطبيق', x.finalPrice], ['سعر الزبون', x.sellPrice]] };
+  const pos = Math.max(0, Math.min(100, x.dr.rate * 100)), bpos = Math.max(0, Math.min(100, x.be * 100));
+  return `<section class="answer" aria-live="polite"><div class="lbl">${head.l}</div><div class="big ${head.big < 0 ? 'neg' : ''}">${money(head.big)}</div>
+    <div class="eq">${head.chips.map(([l, n]) => `<span>${l} <b class="n">${fmtNum(n)}</b><button class="copy" style="color:#9FE3CF" data-act="copy" data-v="${Math.round(n)}" aria-label="نسخ ${l}">${ic('copy', 13)}</button></span>`).join('')}</div></section>
+  <div class="verdict" style="margin-top:12px"><span class="ico ${v.tone}">${ic(v.icon)}</span><div class="grow"><b>${v.t}</b><span class="sub">${v.s}</span>
+    <div class="meter" role="img" aria-label="نسبة التسليم ${Math.round(pos)}٪ ونقطة التعادل ${Math.round(bpos)}٪"><s style="inset-inline-start:${bpos}%"></s><i style="inset-inline-start:${pos}%"></i></div>
+    <div class="meter-l"><span>0%</span><span>تسليم ${Math.round(pos)}% • تعادل ${Math.round(bpos)}%</span><span>100%</span></div>
+    <div class="sub" style="margin-top:6px">نسبة التسليم: ${RATE_SRC[x.dr.src]}${x.dr.n ? ` (${x.dr.n} طلبية)` : ''} • Taxe retour ${fmtNum(x.taxe)} دج</div></div></div>
+  <div class="card pad receipt" style="margin-top:12px"><div class="h">التفصيل</div>
+    <div class="kv"><span>سعر المنتج × الكمية</span><b class="n">${fmtNum(x.price)} × ${x.qty} = ${fmtNum(x.subtotal)}</b></div>
+    <div class="kv"><span>عمولة ${fmtNum(x.appFeePct)}% + حماية ثابتة</span><b>${money(x.appFee + x.fixedFee)}</b></div>
+    ${x.extra ? `<div class="kv"><span>إضافي</span><b>${money(x.extra)}</b></div>` : ''}
+    <div class="kv"><span>فائدتي (${fmtNum(x.mpPiece)} × ${x.qty})</span><b class="pos">${money(x.totalProfit)}</b></div>
+    <div class="kv eqr"><span>سعر التطبيق</span><b>${money(x.finalPrice)}</b></div>
+    <div class="kv"><span>فائدة البائع</span><b>${money(x.seller)}</b></div>
+    <div class="kv eqr"><span>سعر الزبون</span><b>${money(x.sellPrice)}</b></div>
+    ${x.delivery ? `<div class="kv ${payer === 'me' ? 'minus' : ''}"><span>توصيل ${c.type === 'desk' ? 'مكتب' : 'منزل'} — ${esc(AR_W[x.wid])}${payer === 'customer' ? ' (يدفعه الزبون)' : payer === 'unset' ? ' (غير محسوب)' : ''}</span><b>${money(x.delivery)}</b></div>` : ''}
+    <div class="kv key"><span>فائدتي الصافية</span><b class="${x.netProfit >= 0 ? 'pos' : 'neg'}">${money(x.netProfit)}</b></div></div>
+  ${payer === 'unset' && x.delivery ? `<div class="note warn" style="margin-top:12px">${ic('alert', 18)}<div>لم تحدّد بعد من يدفع رسوم التوصيل، لذلك لم تُخصم من فائدتك. <button class="lnk" data-act="go" data-tab="settings" data-sub="fees">حدّد الآن</button></div></div>` : ''}`;
+}
+function wilayaTableHTML() {
+  const c = calcState();
+  const rows = WIDS.map(w => ({ w, x: solveCalc(c, w), raw: rateTable().by[w] })).sort((a, b) => b.x.ev - a.x.ev);
+  return `<div class="wt-wrap"><table class="wt"><thead><tr><th>الولاية</th><th class="n">التوصيل</th><th class="n">التسليم</th><th class="n">${c.mode === 'max' ? 'أقصى سعر' : 'متوقَّع'}</th></tr></thead><tbody>
+    ${rows.map(({ w, x, raw }) => `<tr class="${+c.wid === w ? 'cur' : ''}" data-act="calc-wid" data-v="${w}" style="cursor:pointer"><td>${esc(wLabel(w))}</td><td class="n">${fmtNum(x.delivery)}</td>
+      <td class="n ${x.dr.src === 'wilaya' ? '' : 'muted'}">${Math.round(x.dr.rate * 100)}%${raw ? ` <small class="muted">(${raw.d + raw.r})</small>` : ''}</td><td class="n ${x.ev > 0 ? '' : 'neg'}"><b>${fmtNum(c.mode === 'max' ? x.price : x.ev)}</b></td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+function viewCalc() {
+  const c = calcState(), f = (label, key, hint = '') => `<label class="field"><span>${label}</span><input type="number" inputmode="decimal" step="any" data-c="${key}" value="${esc(c[key])}">${hint ? `<small>${hint}</small>` : ''}</label>`;
+  const inputs = c.mode === 'fwd'
+    ? `<div class="two">${f('سعر المنتج / قطعة', 'price')}${f('الكمية', 'qty')}</div><div class="two">${f('فائدتي / قطعة', 'myProfit')}${f('فائدة البائع', 'seller')}</div>`
+    : c.mode === 'rev'
+      ? `${f('سعر الزبون الذي تريد البيع به', 'sell')}<div class="two">${f('سعر المنتج / قطعة', 'price')}${f('الكمية', 'qty')}</div>${f('فائدة البائع', 'seller')}`
+      : `${f('سعر الزبون', 'sell')}<div class="two">${f('الفائدة التي تريدها (صافية)', 'target')}${f('الكمية', 'qty')}</div>${f('فائدة البائع', 'seller')}`;
+  return `<div class="seg" role="tablist" aria-label="نوع الحساب">${CALC_MODES.map(([k, l]) => `<button role="tab" data-act="calc-mode" data-v="${k}" aria-pressed="${c.mode === k}">${l}</button>`).join('')}</div>
+  <div class="calc-grid"><div>
+    <section class="card pad">${inputs}
+      <div class="two"><label class="field"><span>الولاية</span><select data-c="wid"><option value="">— بدون —</option>${WIDS.map(w => `<option value="${w}" ${+c.wid === w ? 'selected' : ''}>${esc(wLabel(w))}</option>`).join('')}</select></label>
+      <div class="field"><span>التوصيل</span><div class="seg" style="padding:0"><button data-act="calc-type" data-v="home" aria-pressed="${c.type !== 'desk'}">منزل</button><button data-act="calc-type" data-v="desk" aria-pressed="${c.type === 'desk'}">مكتب</button></div></div></div>
+      ${f('فائدة إضافية إجمالية (اختياري)', 'extra')}
+      <button class="btn sec2 block" data-act="calc-to-order">${ic('plus', 18)}<span>سجّلها كطلبية</span></button>
+    </section>
+  </div><div id="calcOut">${calcOutHTML()}</div></div>
+  <details class="acc" style="margin-top:14px"><summary>${ic('truck', 20)}مقارنة كل الولايات لهذه الطلبية</summary><div class="inner"><div class="sub" style="margin-bottom:8px">مرتبة من الأربح إلى الأخسر بعد التوصيل وخطر المرتجع. النسب الباهتة تقديرية (أقل من 5 طلبيات في الولاية). اضغط على ولاية لاختيارها.</div><div id="wTable">${wilayaTableHTML()}</div></div></details>`;
+}
+function calcRefresh() {
+  try { localStorage.setItem('kanach_calc', JSON.stringify(ui.calc)); } catch {}
+  const o = $('#calcOut'); if (o) o.innerHTML = calcOutHTML();
+  const t = $('#wTable'); if (t) t.innerHTML = wilayaTableHTML();
+}
+
+/* =====================================================================
+   اتصل اليوم: الزبائن الذين يحتاجون مكالمة الآن، مع رسالة واتساب جاهزة بالدارجة
+   ===================================================================== */
+const todayISO = () => iso();
+function callList() {
+  return S.entries.filter(e => Q.pending(e) && (e.calledOn || '') !== todayISO()).map(e => {
+    const k = stageOf(e), stale = Q.stale(e);
+    const why = k === 'risk' ? 'risk' : k === 'out' ? 'out' : stale ? 'stale' : '';
+    return why ? { e, why, phone: phoneOfEntry(e) } : null;
+  }).filter(Boolean).sort((a, b) => ({ risk: 0, out: 1, stale: 2 }[a.why] - { risk: 0, out: 1, stale: 2 }[b.why]));
+}
+const CALL_WHY = { risk: ['neg', 'فشل التسليم / راجعة', 'undo'], out: ['wait', 'خرجت للتسليم اليوم', 'truck'], stale: ['info', 'معلّقة منذ أكثر من 7 أيام', 'clock'] };
+function callMsg(it) {
+  const e = it.e, name = (e.yalidineInfo?.clientName || e.ship?.name || '').split(' ')[0], shop = S.settings.appName && S.settings.appName !== 'كناش' ? S.settings.appName : '';
+  const hi = `السلام عليكم${name ? ' ' + name : ''}${shop ? '، معاك ' + shop : ''}.`;
+  const trk = cleanTrack(e.tracking), amt = e.carrier?.price || e.sellPrice, prod = e.product ? ` (${e.product})` : '';
+  if (it.why === 'risk') return `${hi}\nالموزّع حاول يوصّلك الطلبية${prod}${trk ? ' رقم ' + trk : ''} وما قدرش يلقاك. واش الوقت المناسب باش يعاود يجيبهالك؟${amt ? '\nالمبلغ: ' + fmtNum(amt) + ' دج.' : ''}`;
+  if (it.why === 'out') return `${hi}\nطلبيتك${prod} خرجت للتوصيل اليوم${amt ? ' والمبلغ ' + fmtNum(amt) + ' دج' : ''}. خلّي التيليفون مفتوح من فضلك، يعطيك الصحة.`;
+  return `${hi}\nحبّيت نتأكد معاك على طلبيتك${prod}${trk ? ' رقم ' + trk : ''}، راهي في الطريق. كاين أي مشكل ولا كلش مليح؟`;
+}
+function openCallList() {
+  const list = callList();
+  const body = list.length ? `<div class="sub" style="margin:2px 2px 10px">${list.length} زبون — اضغط «واتساب» تُفتح المحادثة والرسالة مكتوبة. «تمّ» يخفيه لبقية اليوم.</div><div class="card list">${list.map(it => {
+    const [tone, lbl, icon] = CALL_WHY[it.why], e = it.e, msg = callMsg(it);
+    return `<div class="call" style="flex-wrap:wrap"><span class="ico ${tone}">${ic(icon)}</span><div class="grow" style="min-width:60%"><b>${esc(e.yalidineInfo?.clientName || e.desc)}</b><span class="sub">${lbl}${e.carrier?.status ? ' · ' + esc(e.carrier.status) : ''}${it.phone ? ` · <span class="n">${esc(it.phone)}</span>` : ''}</span>
+      ${it.phone ? `<div class="msgp">${esc(msg)}</div>` : '<div class="sub neg" style="margin-top:4px">لا يوجد رقم هاتف لهذه الطلبية</div>'}</div>
+      <div class="row" style="width:100%;justify-content:flex-end">${it.phone ? `<a class="btn sm wa" href="${waLink(it.phone, msg)}" target="_blank" rel="noopener">${ic('wa', 16)}واتساب</a><a class="btn sm sec2" href="tel:${esc(it.phone)}">${ic('phone', 16)}اتصال</a>` : ''}<button class="btn sm ghost" data-act="call-done" data-id="${esc(e.id)}">${ic('check', 16)}تمّ</button></div></div>`; }).join('')}</div>`
+    : `<div class="card empty">${ic('check', 32)}<b>لا أحد يحتاج مكالمة الآن</b>تظهر هنا الطلبيات الفاشلة، والخارجة للتسليم، والمعلّقة طويلاً.</div>`;
+  Sheet.open({ title: 'اتصل اليوم', body, footer: '' });
 }
 
 const R_PERIODS = [['month','هذا الشهر'], ['lastm','الشهر الماضي'], ['30d','30 يوماً'], ['7d','7 أيام'], ['all','الكل']];
@@ -1357,6 +1676,22 @@ function viewReports() {
   return `<div class="seg" role="tablist">${R_TABS().map(([k, l]) => `<button role="tab" data-act="r-tab" data-v="${k}" aria-pressed="${ui.rTab === k}">${l}</button>`).join('')}</div>${body}`;
 }
 
+function feesSection() {
+  const s = S.settings, cal = calibrateFees(), num_ = (k, l, h = '') => `<label class="field"><span>${l}</span><input type="number" inputmode="decimal" step="any" data-bind="settings.${k}" data-num value="${num(s[k])}">${h ? `<small>${h}</small>` : ''}</label>`;
+  const P = [['me', 'أنا (تُخصم من مستحقي)'], ['customer', 'الزبون (فوق السعر)'], ['unset', 'لم أحدّد']];
+  const calHTML = cal.verdict === 'few'
+    ? `<div class="note">${ic('info', 18)}<div>المعايرة التلقائية تحتاج 3 طلبيات مُسلَّمة على الأقل بـ Net مؤكد (من ملف Excel أو API أو إدخال يدوي) مع ولاية معروفة. عندك الآن ${cal.n}.</div></div>`
+    : `<div class="note ${cal.clean ? 'good' : 'warn'}">${ic(cal.clean ? 'check' : 'alert', 18)}<div>من <b>${cal.n}</b> طلبية مؤكدة: الفرق الوسيط بين سعر الزبون وNet هو <b>${moneyT(cal.gap)}</b>، ورسوم التوصيل الوسيطة <b>${moneyT(cal.fee)}</b>.<br>
+      ${cal.verdict === 'me' ? 'يبدو أن Yalidine <b>يخصم التوصيل من مبلغك</b>.' : 'يبدو أن <b>الزبون يدفع التوصيل</b> فوق السعر.'}${Math.abs(cal.rest) >= 30 ? ` يبقى خصم إضافي ≈ <b>${moneyT(cal.rest)}</b> لكل طلبية.` : ''}
+      ${s.feePayer !== cal.verdict || (Math.abs(cal.rest) >= 30 && Math.round(num(S.carrier.extraFixed)) !== Math.max(0, cal.rest)) ? `<div style="margin-top:8px"><button class="btn sm" data-act="fee-apply" data-v="${cal.verdict}" data-rest="${cal.rest}">طبّق هذه المعايرة</button></div>` : '<div class="sub" style="margin-top:4px">إعداداتك مطابقة لبياناتك ✓</div>'}</div></div>`;
+  return `<section class="card pad" id="sec-fees"><b>الحاسبة ورسوم التوصيل</b><div class="sub" style="margin:2px 0 12px">تُستعمل في الحاسبة، والفائدة المتوقعة، وتقدير Net.</div>
+    <div class="field"><span>من يدفع رسوم Yalidine؟</span><div class="seg" style="padding:0;flex-wrap:wrap">${P.map(([k, l]) => `<button data-act="fee-payer" data-v="${k}" aria-pressed="${s.feePayer === k}">${l}</button>`).join('')}</div></div>
+    ${calHTML}
+    <div class="two" style="margin-top:12px">${num_('appFeePct', 'عمولة Vonder (%)')}${num_('fixedFee', 'حماية ثابتة (دج)')}</div>
+    <div class="two"><label class="field"><span>ولاية الإرسال</span><select data-bind="settings.originWilaya">${WIDS.map(w => `<option value="${esc(YAL_FEES[w].n)}" ${YAL_FEES[w].n === s.originWilaya ? 'selected' : ''}>${esc(wLabel(w))}</option>`).join('')}</select></label>
+    <label class="field"><span>نوع التوصيل الافتراضي</span><select data-bind="settings.defShip"><option value="home" ${s.defShip !== 'desk' ? 'selected' : ''}>للمنزل</option><option value="desk" ${s.defShip === 'desk' ? 'selected' : ''}>مكتب</option></select></label></div>
+    ${num_('assumeRate', 'نسبة تسليم مفترضة (%)', 'تُستعمل فقط قبل أن تتجمّع 5 طلبيات محسومة في سجلك.')}</section>`;
+}
 function viewSettings() {
   const s = S.settings, jb = !!localStorage.getItem(LS.jbKey), hasKey = !!localStorage.getItem(LS.apiKey);
   const num_ = (k, l) => `<label class="field"><span>${l}</span><input type="number" inputmode="decimal" data-bind="settings.${k}" data-num value="${num(s[k])}"></label>`;
@@ -1365,10 +1700,11 @@ function viewSettings() {
     <div class="sw" style="padding-top:0"><div class="tx"><b>الإعلانات موقوفة مؤقتاً</b><span>يخفي كل ما يخص الإعلانات (بطاقات، تحليل، نوع الحركة). الأرقام السابقة تبقى محسوبة.</span></div><label class="toggle"><input type="checkbox" data-bind="settings.adsPaused" data-render ${s.adsPaused ? 'checked' : ''} aria-label="إيقاف الإعلانات"><i></i></label></div></section>
   <section class="card pad"><b>قيم الطلبية الافتراضية</b><div class="sub" style="margin:2px 0 12px">تُستعمل عند أول طلبية؛ بعدها يقترح التطبيق قيم آخر طلبية.</div>
     <div class="two">${num_('defPrice', 'سعر المنتج')}${num_('defProfit', 'فائدتي / قطعة')}</div><div class="two">${num_('defSeller', 'فائدة البائع')}${num_('defTaxe', 'Taxe retour')}</div></section>
+  ${feesSection()}
   <section class="card pad" id="sec-cloud"><b>المزامنة بين الأجهزة</b>
-    <div class="note ${ui.cloud === 'err' ? 'bad' : ui.cloud === 'ok' ? 'good' : ''}" style="margin:10px 0">${ic('cloud', 18)}<div>${jb ? esc(ui.cloudMsg || 'مفعّلة — تُرفع التغييرات تلقائياً بعد 3 ثوانٍ، وتُسحَب تلقائياً من أي جهاز آخر كل دقيقة ونصف.') : 'غير مفعّلة. أدخل مفتاح JSONBin ومعرّف الـBin لتعمل على الهاتف والحاسوب بنفس البيانات — بلا ضغط أزرار.'}</div></div>
+    <div class="note ${ui.cloud === 'err' ? 'bad' : ui.cloud === 'ok' ? 'good' : ''}" style="margin:10px 0">${ic('cloud', 18)}<div>${jb ? esc(ui.cloudMsg || 'مفعّلة — تُدمج التغييرات حركةً بحركة بين أجهزتك: لا يضيع تعديل جهاز بسبب جهاز آخر، وتُرفع بعد 3 ثوانٍ وتُسحب كل دقيقة ونصف.') : 'غير مفعّلة. أدخل مفتاح JSONBin ومعرّف الـBin لتعمل على الهاتف والحاسوب بنفس البيانات — بلا ضغط أزرار.'}</div></div>
     <div class="two"><label class="field"><span>X-Master-Key</span><input type="password" class="ltr" autocomplete="off" id="jbKey" placeholder="${jb ? '•••••••• (محفوظ)' : '$2a$10$…'}"></label><label class="field"><span>Bin ID</span><input type="text" class="ltr" autocomplete="off" id="jbId" value="${esc(localStorage.getItem(LS.jbId) || '')}"></label></div>
-    <div class="row wrap-r"><button class="btn sec2 grow" data-act="cloud-save-cfg">حفظ الإعداد</button>${jb ? `<button class="btn sec2 grow" data-act="cloud-up">${ic('upload', 18)}<span>رفع الآن</span></button><button class="btn sec2 grow" data-act="cloud-down">${ic('download', 18)}<span>تحميل الآن</span></button>` : ''}</div>
+    <div class="row wrap-r"><button class="btn sec2 grow" data-act="cloud-save-cfg">حفظ الإعداد</button>${jb ? `<button class="btn sec2 grow" data-act="cloud-up">${ic('upload', 18)}<span>زامن الآن</span></button><button class="btn sec2 grow" data-act="cloud-down">${ic('download', 18)}<span>استبدال بنسخة السحابة</span></button>` : ''}</div>
     <div class="note warn" style="margin-top:12px">${ic('alert', 18)}<div>بيانات العملاء (أسماء وهواتف) تُرفع إلى هذا الحساب. لا تشارك المفتاح ولا تضعه في ملف منشور على الإنترنت.</div></div></section>
   <section class="card pad-s" id="sec-notif"><b style="display:block;padding:2px 0 6px">التنبيهات</b>
     <div class="sw"><div class="tx"><b>تنبيه صوتي عند وصول تحديث</b><span>رنّة قصيرة عند تسليم، مرتجع، أو وصول بيانات من جهاز آخر</span></div><label class="toggle"><input type="checkbox" data-bind="settings.soundAlert" ${s.soundAlert ? 'checked' : ''} aria-label="تنبيه صوتي"><i></i></label></div>
@@ -1390,8 +1726,9 @@ function viewSettings() {
   </div>`;
 }
 
-const VIEWS = { home: viewHome, orders: viewOrders, carrier: viewCarrier, reports: viewReports, settings: viewSettings };
+const VIEWS = { home: viewHome, orders: viewOrders, calc: viewCalc, carrier: viewCarrier, reports: viewReports, settings: viewSettings };
 const AFTER = {
+  calc() { $$('[data-c]').forEach(el => { el[el.tagName === 'SELECT' ? 'onchange' : 'oninput'] = () => { calcState()[el.dataset.c] = el.value; calcRefresh(); }; }); },
   orders() { const i = $('#ordersSearch'); if (i) i.oninput = e => { ui.search = e.target.value; ui.limit = 40; $('#ordersList').innerHTML = ordersListHTML(); }; },
   reports() {
     const i = $('#crmSearch'); if (i) i.oninput = e => { ui.crmQ = e.target.value; $('#crmList').innerHTML = crmListHTML(); };
@@ -1418,10 +1755,12 @@ const FORM_TYPES = [['vonder', 'طلبية Vonder', 'box'], ['sonazone', 'طلب
 function newDraft(type = 'vonder') {
   const lv = S.entries.find(e => e.type === 'vonder'), s = S.settings;
   return { id: null, type, date: iso(), desc: '', tracking: '', product: '', price: lv?.productPrice || s.defPrice, qty: 1, myProfit: lv?.myProfit || s.defProfit,
-    seller: lv ? (lv.sellerProfit ?? s.defSeller) : s.defSeller, extra: 0, status: 'pending', net: '', buy: '', sell: '', sqty: 1, amount: '', linkId: '', taxe: s.defTaxe, manual: false, rq: '' };
+    seller: lv ? (lv.sellerProfit ?? s.defSeller) : s.defSeller, extra: 0, status: 'pending', net: '', buy: '', sell: '', sqty: 1, amount: '', linkId: '', taxe: s.defTaxe, manual: false, rq: '',
+    wid: '', shipType: s.defShip, phone: '', cname: '', paste: '' };
 }
 function draftFromEntry(e) {
   const d = newDraft(e.type); d.id = e.id; d.date = e.date; d.desc = e.desc || ''; d.tracking = e.tracking || ''; d.product = e.product || ''; d.status = e.status === 'delivered' ? 'delivered' : 'pending';
+  d.wid = wilayaOfEntry(e) || ''; d.shipType = e.ship?.type || S.settings.defShip; d.phone = phoneOfEntry(e); d.cname = e.yalidineInfo?.clientName || '';
   if (e.type === 'vonder') { d.price = e.productPrice; d.qty = e.quantity || 1; d.myProfit = e.myProfit; d.seller = e.sellerProfit ?? 0; d.extra = e.extraFee || 0; d.net = e.isActualProfit ? e.netClient : ''; }
   else if (e.type === 'sonazone') { d.buy = e.sonaBuyPrice; d.sell = e.sonaSellPrice; d.sqty = e.sonaQuantity || 1; }
   else d.amount = e.amount;
@@ -1441,6 +1780,28 @@ function openForm(opts = {}) {
 const fld = (label, key, attrs = '', hint = '') => `<label class="field"><span>${label}</span><input data-f="${key}" value="${esc(F[key])}" ${attrs}>${hint ? `<small>${hint}</small>` : ''}</label>`;
 const numf = (label, key, hint = '') => fld(label, key, 'type="number" inputmode="decimal" step="any"', hint);
 
+/* لصق رسالة الزبون (واتساب/مسنجر) ← الاسم، الهاتف، الولاية */
+const LABEL_RE = /^\s*(?:الاسم(?: الكامل)?|الإسم|اسم|nom(?: complet)?|name|pr[ée]nom|الولاية|ولاية|wilaya|البلدية|بلدية|commune|العنوان|adresse|address|الهاتف|رقم الهاتف|التلفون|tel|t[ée]l[ée]phone|phone|المنتج|produit|الكمية|quantit[ée])\s*[:：\-–]?\s*/i;
+const GREET_RE = /(سلام|السلام|مرحبا|صباح|مساء|نحب|نحوس|بغيت|حاب|نطلب|من فضلك|عافاك|شكرا|بارك|salam|bonjour|bonsoir|merci|svp|commande|je veux|hello|hi\b)/i;
+function parseCustomerMsg(t) {
+  const txt = String(t || '').replace(/[٠-٩]/g, d => d.charCodeAt(0) - 0x660).replace(/[۰-۹]/g, d => d.charCodeAt(0) - 0x6F0);
+  const out = {};
+  const pm = txt.match(/(?:\+?213|00213|0)[\s.\-]*([5-7](?:[\s.\-]*\d){8})/); if (pm) out.phone = '0' + pm[1].replace(/\D/g, '');
+  const lines = txt.split(/\n|،|,|\|/).map(raw => { const m = raw.match(LABEL_RE); return { label: m ? norm(m[0]) : '', v: raw.replace(LABEL_RE, '').trim() }; }).filter(x => x.v);
+  for (const { label, v } of lines) {
+    if (!out.wid && !/\d{6,}/.test(v)) { const w = wilayaIdOf(v, !/wilaya|ولاية/.test(label)); if (w && (/wilaya|ولاية/.test(label) || wilayaIdOf(v, true))) { out.wid = w; continue; } }
+    if (!out.name && !/\d/.test(v) && !GREET_RE.test(v) && v.split(/\s+/).length <= 4 && v.length >= 3 && v.length <= 40 && !/(بلدية|commune|عنوان|adresse|منتج|produit)/.test(label) && !wilayaIdOf(v, true)) out.name = v.replace(/\s+/g, ' ');
+  }
+  return out;
+}
+function shipFields() {
+  const t = F.type;
+  if (t !== 'vonder' && t !== 'sonazone') return '';
+  return `<div class="two"><label class="field"><span>الولاية</span><select data-f="wid"><option value="">— اختر (لحساب رسوم التوصيل) —</option>${WIDS.map(w => `<option value="${w}" ${+F.wid === w ? 'selected' : ''}>${esc(wLabel(w))}</option>`).join('')}</select></label>
+    <div class="field"><span>نوع التوصيل</span><div class="seg" style="padding:0"><button type="button" data-act="form-ship" data-v="home" aria-pressed="${F.shipType !== 'desk'}">للمنزل</button><button type="button" data-act="form-ship" data-v="desk" aria-pressed="${F.shipType === 'desk'}">مكتب</button></div></div></div>
+    <div id="custBox"></div>`;
+}
+
 function formBody() {
   const t = F.type, edit = !!F.id;
   let h = edit ? '' : `<div class="seg" role="tablist">${FORM_TYPES.map(([k, l, i]) => `<button data-act="form-type" data-v="${k}" aria-pressed="${t === k}">${ic(i, 16)}${l}</button>`).join('')}</div>`;
@@ -1452,9 +1813,11 @@ function formBody() {
   }
   h += `<div class="two">${fld('التاريخ', 'date', 'type="date"')}${t === 'expense' ? '<div></div>' : ''}</div>`;
   if (t === 'expense') return h + fld('السبب', 'desc', 'type="text" placeholder="غداء، وقود…"') + numf('المبلغ (دج)', 'amount');
-  h += fld('اسم الزبون / الطلبية', 'desc', 'type="text" placeholder="مثال: أحمد — وهران"');
+  if (!F.id) h += `<details class="acc" style="margin-bottom:12px;box-shadow:none" ${F.paste ? 'open' : ''}><summary style="padding:12px 14px;font-size:14px">${ic('chat', 18)}لصق رسالة الزبون</summary><div class="inner"><textarea data-f="paste" rows="3" placeholder="الصق هنا رسالة الطلب كما وصلتك (الاسم، الهاتف، الولاية…) وسيُملأ الباقي.">${esc(F.paste)}</textarea><div class="parsed" id="parsedBox" style="margin-top:8px"></div></div></details>`;
+  h += fld('اسم الزبون / الطلبية', 'desc', 'type="text" placeholder="مثال: أحمد 0550123456"');
   h += `<div class="two">${fld('رقم التتبع', 'tracking', 'type="text" class="ltr" placeholder="yal-…" autocapitalize="off"')}${fld('المنتج (اختياري)', 'product', 'type="text"')}</div>`;
   if (t === 'vonder') {
+    h += shipFields();
     PRESETS = presets();
     if (!F.id && PRESETS.length) h += `<div class="sub" style="margin-bottom:6px">آخر المنتجات</div><div class="chips">${PRESETS.map((p, i) => `<button class="chip" data-act="form-preset" data-i="${i}">${esc(p.product || fmtNum(p.productPrice))} • ${fmtNum(p.myProfit)}</button>`).join('')}</div>`;
     h += `<div class="two">${numf('سعر المنتج / قطعة', 'price')}<div class="field"><span>الكمية</span><div class="stepper"><button type="button" data-act="form-qty" data-d="-1" aria-label="أنقص">−</button><input data-f="qty" id="qtyIn" type="number" inputmode="numeric" min="1" value="${esc(F.qty)}"><button type="button" data-act="form-qty" data-d="1" aria-label="زِد">+</button></div></div></div>
@@ -1463,6 +1826,7 @@ function formBody() {
       <div class="seg" style="margin-top:12px"><button data-act="form-status" data-v="pending" aria-pressed="${F.status === 'pending'}">معلّقة</button><button data-act="form-status" data-v="delivered" aria-pressed="${F.status === 'delivered'}">مُسلَّمة</button></div>
       ${F.status === 'delivered' ? numf('Net Client من Yalidine', 'net', 'يحسب فائدتك الفعلية. اتركه فارغاً لتُحسب لاحقاً.') : ''}`;
   } else {
+    h += shipFields();
     h += `<div class="two">${numf('سعر الشراء / قطعة', 'buy')}${numf('سعر البيع / قطعة', 'sell')}</div>
       <div class="field"><span>الكمية</span><div class="stepper"><button type="button" data-act="form-qty" data-d="-1" aria-label="أنقص">−</button><input data-f="sqty" id="qtyIn" type="number" inputmode="numeric" min="1" value="${esc(F.sqty)}"><button type="button" data-act="form-qty" data-d="1" aria-label="زِد">+</button></div></div>
       <div id="calcBox"></div><div class="seg" style="margin-top:12px"><button data-act="form-status" data-v="pending" aria-pressed="${F.status === 'pending'}">معلّقة</button><button data-act="form-status" data-v="delivered" aria-pressed="${F.status === 'delivered'}">مُسلَّمة</button></div>`;
@@ -1487,16 +1851,23 @@ function updateForm() {
   if (!F) return;
   const t = F.type, box = $('#calcBox');
   if (t === 'vonder' && box) {
-    const c = calcVonder({ price: F.price, qty: F.qty, myProfit: F.myProfit, extra: F.extra, seller: F.seller }), net = num(F.net), showReal = F.status === 'delivered' && net > 0;
+    const fee = F.wid ? feeFor(+F.wid, F.shipType) : 0;
+    const c = calcVonder({ price: F.price, qty: F.qty, myProfit: F.myProfit, extra: F.extra, seller: F.seller, fee }), net = num(F.net), showReal = F.status === 'delivered' && net > 0;
+    const payer = S.settings.feePayer, dr = deliveryRate(+F.wid), ev = expectedValue(c.netProfit, dr.rate, num(S.settings.defTaxe));
     box.innerHTML = `<div class="card pad-s" style="margin-top:4px">
       <div class="kv"><span>سعر المنتج × الكمية</span><b class="n">${fmtNum(c.price)} × ${c.qty} = ${fmtNum(c.subtotal)}</b></div>
-      <div class="kv"><span>عمولة 6%</span><b>${money(c.appFee)}</b></div><div class="kv"><span>حماية ثابتة للطلب</span><b>${money(c.fixedFee)}</b></div>
+      <div class="kv"><span>عمولة ${fmtNum(c.appFeePct)}%</span><b>${money(c.appFee)}</b></div><div class="kv"><span>حماية ثابتة للطلب</span><b>${money(c.fixedFee)}</b></div>
       ${c.extra ? `<div class="kv"><span>فائدة إضافية</span><b>${money(c.extra)}</b></div>` : ''}
       <div class="kv tot"><span>التكلفة الإجمالية</span><b>${money(c.totalCost)}</b></div>
       <div class="kv"><span>فائدتي × الكمية</span><b class="pos">${money(c.totalProfit)}</b></div>
       <div class="kv key"><span>سعر التطبيق</span><b>${money(c.finalPrice)}<button class="copy" data-act="copy" data-v="${Math.round(c.finalPrice)}" aria-label="نسخ">${ic('copy', 14)}</button></b></div>
       <div class="kv"><span>فائدة البائع</span><b>${money(c.seller)}</b></div>
       <div class="kv key"><span>سعر الزبون النهائي</span><b>${money(c.sellPrice)}<button class="copy" data-act="copy" data-v="${Math.round(c.sellPrice)}" aria-label="نسخ">${ic('copy', 14)}</button></b></div>
+      ${fee ? `<div class="kv" style="margin-top:8px"><span>توصيل ${F.shipType === 'desk' ? 'مكتب' : 'منزل'} — ${esc(AR_W[+F.wid])}</span><b>${money(fee)}</b></div>
+        ${payer === 'me' ? `<div class="kv"><span>فائدتي بعد خصم التوصيل</span><b class="${c.netProfit >= 0 ? 'pos' : 'neg'}">${money(c.netProfit)}</b></div>`
+          : payer === 'customer' ? `<div class="kv"><span>يدفع الزبون للموزّع</span><b>${money(c.customerPays)}</b></div>`
+          : `<div class="sub" style="padding:4px 0">لم تحدّد بعد من يدفع التوصيل — <button class="lnk" data-act="go" data-tab="settings" data-sub="fees">حدّده من الإعدادات</button>.</div>`}
+        <div class="kv"><span>متوقَّع مع خطر المرتجع <span class="muted">(تسليم ${Math.round(dr.rate * 100)}%)</span></span><b class="${ev > 0 ? '' : 'neg'}">${money(ev)}</b></div>` : ''}
       ${showReal ? `<div class="kv tot"><span>فائدتي الفعلية</span><b class="${realProfit(net, c.totalCost, c.seller) >= 0 ? 'pos' : 'neg'}">${money(realProfit(net, c.totalCost, c.seller))}</b></div>` : ''}</div>`;
   }
   if (t === 'sonazone' && box) { const q = Math.max(1, parseInt(F.sqty) || 1), u = num(F.sell) - num(F.buy); box.innerHTML = `<div class="card pad-s"><div class="kv tot" style="border:0;margin:0;padding:0"><span>فائدتك</span><b class="${u >= 0 ? 'pos' : 'neg'}"><span class="n">${fmtNum(u)} × ${q} =</span> ${money(u * q)}</b></div></div>`; }
@@ -1505,6 +1876,9 @@ function updateForm() {
     const o = S.entries.find(e => sameId(e.id, F.linkId)), rb = $('#retBox');
     if (rb) rb.innerHTML = !F.manual && o ? `<div class="note bad">${ic('alert', 18)}<div>الخسارة: <b>${moneyT(o.status === 'delivered' ? o.amount + num(F.taxe) : num(F.taxe))}</b> ${o.status === 'delivered' ? '(فائدة الطلبية + Taxe)' : '(Taxe فقط)'}</div></div>` : '';
   }
+  const cb = $('#custBox');
+  if (cb) { const rc = riskyCustomer(F.phone || (F.desc.match(/0\d{9}/) || [''])[0]);
+    cb.innerHTML = rc ? `<div class="note bad custwarn">${ic('alert', 18)}<div>هذا الزبون <b>${rc.r.t}</b>: ${rc.c.returned} مرتجع من ${rc.c.orders} طلبية${rc.c.wilaya ? ' • ' + esc(rc.c.wilaya) : ''}. أكّد بالهاتف قبل الإرسال.</div></div>` : ''; }
   const b = $('#formSave'); if (b) b.disabled = !!formError();
 }
 function saveForm() {
@@ -1524,15 +1898,18 @@ function saveForm() {
   else {
     const delivered = F.status === 'delivered', common = { id: old?.id || uid(), date: F.date, desc: F.desc.trim() || (t === 'vonder' ? 'طلبية Vonder' : 'طلبية Sonazone'), tracking: cleanTrack(F.tracking), product: F.product.trim(), status: F.status, timestamp: old?.timestamp || now };
     if (t === 'vonder') {
-      const c = calcVonder({ price: F.price, qty: F.qty, myProfit: F.myProfit, extra: F.extra, seller: F.seller }), net = num(F.net), actual = delivered && net > 0;
+      const c = calcVonder({ price: F.price, qty: F.qty, myProfit: F.myProfit, extra: F.extra, seller: F.seller, fee: F.wid ? feeFor(+F.wid, F.shipType) : 0 }), net = num(F.net), actual = delivered && net > 0;
       const keepSrc = old && Math.round(old.netClient || 0) === Math.round(net) ? (old.netSource || 'manual') : 'manual';
-      e = { ...common, type: 'vonder', amount: actual ? realProfit(net, c.totalCost, c.seller) : c.totalProfit, productPrice: c.price, quantity: c.qty, myProfit: c.myProfit, sellerProfit: c.seller, totalSellerProfit: c.seller, extraFee: c.extra,
-        totalCost: c.totalCost, finalPrice: c.finalPrice, sellPrice: c.sellPrice, netClient: actual ? net : 0, expectedProfit: c.totalProfit, isActualProfit: actual, netSource: actual ? keepSrc : '', sonaBuyPrice: 0, sonaSellPrice: 0, sonaQuantity: 1 };
+      e = { ...common, type: 'vonder', amount: actual ? realProfit(net, c.totalCost, c.seller) : c.netProfit, grossProfit: c.totalProfit, productPrice: c.price, quantity: c.qty, myProfit: c.myProfit, sellerProfit: c.seller, totalSellerProfit: c.seller, extraFee: c.extra,
+        totalCost: c.totalCost, finalPrice: c.finalPrice, sellPrice: c.sellPrice, netClient: actual ? net : 0, expectedProfit: c.netProfit, isActualProfit: actual, netSource: actual ? keepSrc : '', sonaBuyPrice: 0, sonaSellPrice: 0, sonaQuantity: 1 };
     } else {
       const q = Math.max(1, parseInt(F.sqty) || 1);
       e = { ...common, type: 'sonazone', amount: (num(F.sell) - num(F.buy)) * q, productPrice: 0, quantity: 1, myProfit: 0, sellerProfit: 0, extraFee: 0, totalCost: 0, finalPrice: 0, sellPrice: 0, netClient: 0, expectedProfit: 0, isActualProfit: false, sonaBuyPrice: num(F.buy), sonaSellPrice: num(F.sell), sonaQuantity: q };
     }
     if (delivered && !old?.deliveredAt) e.deliveredAt = now;
+    const wname = F.wid ? YAL_FEES[+F.wid].n : '', phone = F.phone || (e.desc.match(/0\d{9}/) || [''])[0];
+    if (wname || old?.ship) e.ship = { ...(old?.ship || {}), wilaya: wname || old?.ship?.wilaya || '', type: F.shipType };
+    if (wname || phone || F.cname) e.yalidineInfo = { ...(old?.yalidineInfo || {}), clientName: old?.yalidineInfo?.clientName || F.cname || '', phone: old?.yalidineInfo?.phone || phone, wilaya: old?.yalidineInfo?.wilaya || wname, commune: old?.yalidineInfo?.commune || '' };
   }
   if (old) Object.assign(old, e); else S.entries.unshift(e);
   const added = !old, id = e.id;
@@ -1605,7 +1982,17 @@ function openEntry(id) {
 const suggestNet = e => { const c = e.carrier; if (!c?.price) return 0; return Math.round(deriveNet({ source: 'api', price: c.price, deliveryFee: c.deliveryFee || 0, netExact: 0 }).net); };
 
 const A = {
-  go: (d) => go(d.tab, { ...(d.sub ? { rTab: d.sub } : {}), ...(d.filter ? { filter: d.filter, limit: 40, search: '' } : {}) }),
+  go: (d) => go(d.tab, { ...(d.sub ? (d.tab === 'reports' ? { rTab: d.sub } : { scrollTo: 'sec-' + d.sub }) : {}), ...(d.filter ? { filter: d.filter, limit: 40, search: '' } : {}) }),
+  'calc-mode': (d) => { calcState().mode = d.v; calcRefresh(); render(); },
+  'calc-type': (d) => { calcState().type = d.v; $$('[data-act=calc-type]').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === d.v)); calcRefresh(); },
+  'calc-wid': (d) => { calcState().wid = d.v; const sel = $('select[data-c=wid]'); if (sel) sel.value = d.v; calcRefresh(); },
+  'calc-to-order': () => { const c = calcState(), x = solveCalc(c); openForm({ type: 'vonder' });
+    Object.assign(F, { price: Math.round(x.price * 100) / 100, qty: x.qty, myProfit: Math.round(x.mpPiece), seller: x.seller, extra: x.extra, wid: c.wid, shipType: c.type });
+    $('#sheetBody').innerHTML = formBody(); updateForm(); },
+  'call-open': () => openCallList(),
+  'call-done': (d) => { const e = S.entries.find(x => sameId(x.id, d.id)); if (!e) return; e.calledOn = todayISO(); persist(); openCallList(); render(); },
+  'fee-payer': async (d) => { if (S.settings.feePayer === d.v) return; S.settings.feePayer = d.v; saveSettings(); const n = recomputePending(); if (n) persist(); render(); toast(n ? `تم — أُعيد حساب ${n} طلبية معلّقة` : 'تم الحفظ'); },
+  'fee-apply': (d) => { S.settings.feePayer = d.v; saveSettings(); if (d.rest && Math.abs(num(d.rest)) >= 30) { S.carrier.extraFixed = Math.max(0, num(d.rest)); saveCarrier(); } const n = recomputePending(); if (n) persist(); render(); toast(`طُبّقت المعايرة${n ? ` • ${n} طلبية معلّقة أُعيد حسابها` : ''}`); },
   add: () => openForm({ type: 'vonder' }),
   theme: () => { const dark = document.documentElement.getAttribute('data-theme') === 'dark'; document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark'); localStorage.setItem(LS.theme, dark ? 'light' : 'dark'); render(); },
   period: (d) => { ui.period = d.v; render(); },
@@ -1621,6 +2008,7 @@ const A = {
   'form-qty': (d) => { const k = F.type === 'sonazone' ? 'sqty' : 'qty'; F[k] = Math.max(1, (parseInt(F[k]) || 1) + (+d.d)); $('#qtyIn').value = F[k]; updateForm(); },
   'form-pick': (d) => { F.linkId = d.id; const o = S.entries.find(e => sameId(e.id, d.id)); if (o?.carrier?.taxeRetour) F.taxe = o.carrier.taxeRetour; updateForm(); },
   'form-save': () => saveForm(),
+  'form-ship': (d) => { F.shipType = d.v; $$('[data-act=form-ship]').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === d.v)); updateForm(); },
 
   'entry-edit': (d) => { const e = S.entries.find(x => sameId(x.id, d.id)); if (e) openForm({ entry: e }); },
   'entry-dup': (d) => { const e = S.entries.find(x => sameId(x.id, d.id)); if (!e) return; const cp = JSON.parse(JSON.stringify(e)); cp.id = uid(); cp.date = iso(); cp.status = 'pending'; cp.tracking = ''; delete cp.deliveredAt; delete cp.returnedAt; delete cp.carrier; delete cp.yalidineInfo; cp.isActualProfit = false; cp.netClient = 0; cp.amount = cp.expectedProfit || cp.amount; cp.timestamp = new Date().toISOString(); S.entries.unshift(cp); Sheet.close(); commit(); toast('تم تكرار الحركة كطلبية جديدة'); },
@@ -1677,7 +2065,7 @@ const A = {
   'apikey-save': () => { const v = $('#apiKeyIn').value.trim(); if (!v) return; localStorage.setItem(LS.apiKey, v); render(); toast('تم حفظ المفتاح'); },
   'apikey-del': () => { localStorage.removeItem(LS.apiKey); render(); toast('تم حذف المفتاح'); },
   'cloud-save-cfg': () => { const k = $('#jbKey').value.trim(), id = $('#jbId').value.trim(); if (k) localStorage.setItem(LS.jbKey, k); if (id) localStorage.setItem(LS.jbId, id); initCloud(); render(); toast('تم الحفظ'); },
-  'cloud-up': () => cloudPush(true),
+  'cloud-up': () => cloudSync({ manual: true }),
   'push-open': () => openPush(),
   'push-send': () => pushSend(),
   'vonder-import': () => {
@@ -1685,22 +2073,35 @@ const A = {
     let j; try { j = JSON.parse(raw); } catch { toast('النص غير صالح. انسخه من جديد بالزر.', { tone:'bad' }); return; }
     if (j.kanach !== 'vonder' || !Array.isArray(j.rows)) { toast('هذا ليس نصّ كناش.', { tone:'bad' }); return; }
     const r = importVonder(j.rows); commit();
-    toast(`FreeVendor: ${r.added} جديدة • ${r.dup} موجودة • ${r.skipped} مُتجاهَلة (حالتها ليست مؤكدة)`);
+    toast(`FreeVendor: ${r.added} جديدة • ${r.dup} موجودة • ${r.skipped} مُتجاهَلة (حالتها ليست مؤكدة)${r.risky ? ` • ⚠ ${r.risky} من زبائن لهم مرتجعات` : ''}`);
     if (r.added) pingUpdate('كناش — FreeVendor', `${r.added} طلبية جديدة`);
   },
-  'cloud-down': async () => { const r = await ask({ title: 'تحميل من السحابة؟', body: 'سيستبدل هذا بيانات هذا الجهاز ببيانات السحابة.', ok: 'تحميل', danger: true }); if (!r.ok) return; cloudPull(true); },
+  'cloud-down': async () => { const r = await ask({ title: 'تحميل من السحابة؟', body: 'سيستبدل هذا بيانات هذا الجهاز ببيانات السحابة.', ok: 'تحميل', danger: true }); if (!r.ok) return; cloudReplace(); },
   'export-xlsx': () => exportXlsx(),
   'export-crm': () => exportCrmXlsx()
 };
+function applyParsed(r) {
+  if (!F) return;
+  if (r.phone) F.phone = r.phone; if (r.name) F.cname = r.name; if (r.wid) F.wid = r.wid;
+  const auto = [F.cname, F.phone].filter(Boolean).join(' ');
+  if (auto && (!F.desc.trim() || F.desc === F.autoDesc)) { F.desc = F.autoDesc = auto; const d = $('[data-f=desc]'); if (d) d.value = auto; }
+  const w = $('select[data-f=wid]'); if (w) w.value = F.wid || '';
+  const pb = $('#parsedBox'); if (pb) pb.innerHTML = [r.name && `<span class="badge pos">${ic('check', 12)}${esc(r.name)}</span>`, r.phone && `<span class="badge pos n">${esc(r.phone)}</span>`, r.wid && `<span class="badge pos">${esc(wLabel(r.wid))}</span>`].filter(Boolean).join('') || (F.paste.trim() ? '<span class="badge">لم أتعرّف على شيء بعد</span>' : '');
+}
 function suggestNetDraft() { if (F.type !== 'vonder' || !cleanTrack(F.tracking)) return ''; const m = S.entries.find(e => cleanTrack(e.tracking).toLowerCase() === cleanTrack(F.tracking).toLowerCase()); return m ? suggestNet(m) || '' : ''; }
 
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const no = $('#dlgNo'); if (no) { no.click(); return; }
+  if (Sheet.isOpen()) Sheet.close();
+});
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const fn = A[b.dataset.act]; if (fn) { e.preventDefault(); fn(b.dataset); }
 });
 document.addEventListener('input', e => {
   const t = e.target, k = t.dataset?.f;
-  if (k && F) { F[k] = t.value; updateForm(); }
+  if (k && F) { F[k] = t.type === 'checkbox' ? t.checked : t.value; if (k === 'paste') applyParsed(parseCustomerMsg(t.value)); if (k === 'manual') $('#sheetBody').innerHTML = formBody(); updateForm(); }
   const b = t.dataset?.bind;
   if (b) {
     const [obj, key] = b.split('.'), tgt = obj === 'settings' ? S.settings : S.carrier;
@@ -1740,10 +2141,17 @@ function handleRestore(file) {
   r.readAsText(file);
 }
 
+let xlsxP = null;
+function loadXLSX() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  return xlsxP || (xlsxP = new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js';
+    sc.onload = () => res(window.XLSX); sc.onerror = () => { xlsxP = null; rej(new Error('تعذّر تحميل مكتبة Excel — تحقّق من الإنترنت')); }; document.head.appendChild(sc); }));
+}
 function sheetToRows(ws) { return XLSX.utils.sheet_to_json(ws, { defval: '' }); }
 async function handleYalFile(file) {
   if (!file) return;
   try {
+    await loadXLSX();
     const buf = await file.arrayBuffer(), wb = XLSX.read(buf, { type: 'array' });
     const rows = sheetToRows(wb.Sheets[wb.SheetNames[0]]);
     const parcels = parseYalidineRows(rows);
@@ -1755,69 +2163,95 @@ async function handleYalFile(file) {
   } catch (err) { toast('تعذّرت قراءة الملف: ' + err.message, { tone: 'bad' }); }
   $('#yalFile').value = '';
 }
-function exportXlsx() {
+async function exportXlsx() {
+  try { await loadXLSX(); } catch (e) { toast(e.message, { tone: 'bad' }); return; }
   const rows = S.entries.filter(isOrder).map(e => ({ التاريخ: e.date, الوصف: e.desc, النوع: e.type === 'vonder' ? 'Vonder' : 'Sonazone', الحالة: { pending: 'معلّقة', delivered: 'مُسلَّمة', returned: 'مرتجعة' }[e.status],
     'رقم التتبع': e.tracking || '', المنتج: e.product || '', الزبون: e.yalidineInfo?.clientName || '', الهاتف: e.yalidineInfo?.phone || '', الولاية: e.yalidineInfo?.wilaya || '',
     'سعر الزبون': e.sellPrice || '', 'Net Client': e.isActualProfit ? e.netClient : '', 'مصدر Net': NET_LABEL[netSourceOf(e)] || '', الفائدة: Math.round(e.amount || 0) }));
   if (!rows.length) { toast('لا توجد طلبيات للتصدير'); return; }
   const ws = XLSX.utils.json_to_sheet(rows), wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'الطلبيات'); XLSX.writeFile(wb, `كناش-تقرير-${iso()}.xlsx`);
 }
-function exportCrmXlsx() {
+async function exportCrmXlsx() {
+  try { await loadXLSX(); } catch (e) { toast(e.message, { tone: 'bad' }); return; }
   const rows = buildCustomers().map(c => ({ الاسم: c.name, الهاتف: c.phone, الولاية: c.wilaya, الطلبيات: c.orders, 'مُسلَّمة': c.delivered, مرتجعة: c.returned, 'الفائدة المحققة': Math.round(c.profit), التصنيف: rateCustomer(c).t, 'آخر طلبية': fmtDate(c.last) }));
   if (!rows.length) { toast('لا يوجد عملاء'); return; }
   const ws = XLSX.utils.json_to_sheet(rows), wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'العملاء'); XLSX.writeFile(wb, `كناش-عملاء-${iso()}.xlsx`);
 }
 
 let cloudTimer = null, cloudPollTimer = null;
+const CLOUD = { busy: false, again: false, dirty: false };
 const cloudReady = () => !!(localStorage.getItem(LS.jbKey) && localStorage.getItem(LS.jbId));
 function initCloud() {
-  cloudHook = () => { if (!cloudReady()) return; clearTimeout(cloudTimer); ui.cloud = 'busy'; cloudTimer = setTimeout(() => cloudPush(false), 3000); };
-  if (cloudReady()) { ui.cloud = 'idle'; cloudPull(false); }
+  cloudHook = () => { if (!cloudReady()) return; CLOUD.dirty = true; clearTimeout(cloudTimer); ui.cloud = 'busy'; cloudTimer = setTimeout(() => { cloudTimer = null; cloudSync(); }, 3000); };
+  if (cloudReady()) cloudSync();
   scheduleCloudPoll();
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') cloudAutoPull(); });
 }
-function scheduleCloudPoll() { clearInterval(cloudPollTimer); if (cloudReady()) cloudPollTimer = setInterval(cloudAutoPull, 90000); }
+document.addEventListener('visibilitychange', () => {
+  if (!cloudReady()) return;
+  if (document.visibilityState === 'hidden' && CLOUD.dirty) { clearTimeout(cloudTimer); cloudTimer = null; cloudSync(); }
+  else if (document.visibilityState === 'visible') cloudSync();
+});
+function scheduleCloudPoll() { clearInterval(cloudPollTimer); if (cloudReady()) cloudPollTimer = setInterval(() => { if (document.visibilityState === 'visible') cloudSync(); }, 90000); }
 async function jbCall(method, body) {
   const id = localStorage.getItem(LS.jbId), key = localStorage.getItem(LS.jbKey);
-  const res = await fetch(`https://api.jsonbin.io/v3/b/${id}${method === 'GET' ? '/latest' : ''}`, { method, headers: { 'Content-Type': 'application/json', 'X-Master-Key': key, 'X-Bin-Meta': 'false' }, body: body ? JSON.stringify(body) : undefined });
+  const res = await fetch(`https://api.jsonbin.io/v3/b/${id}${method === 'GET' ? '/latest' : ''}`, { method, headers: { 'Content-Type': 'application/json', 'X-Master-Key': key, 'X-Bin-Meta': 'false' }, body: body ? JSON.stringify(body) : undefined, keepalive: method === 'PUT' && !!body && JSON.stringify(body).length < 60000 });
   if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.json();
 }
-async function cloudPush(manual) {
+/* دمج سجلّين بالمعرّف: الأحدث updatedAt يفوز، وشاهد الحذف الأحدث يحذف */
+function mergeById(local, remote, tombs) {
+  const m = new Map();
+  (remote || []).forEach(x => x && x.id != null && m.set(x.id, x));
+  (local || []).forEach(x => { const r = m.get(x.id); if (!r || (x.updatedAt || '') >= (r.updatedAt || '')) m.set(x.id, x); });
+  Object.entries(tombs).forEach(([id, ts]) => { const x = m.get(id); if (x && (x.updatedAt || '') <= ts) m.delete(id); });
+  return [...m.values()];
+}
+const mergeTombs = (a = {}, b = {}) => { const o = { ...a }; Object.entries(b).forEach(([k, v]) => { if (!o[k] || v > o[k]) o[k] = v; }); return o; };
+const stateKey = d => JSON.stringify([(d.entries || []).map(x => x.id + '@' + (x.updatedAt || '')).sort(), (d.budgetExp || []).map(x => x.id + '@' + (x.updatedAt || '')).sort(), Object.keys(d.deleted || {}).sort(), Object.keys(d.deletedB || {}).sort(), Object.entries(d.budgets || {}).sort()]);
+const byNewest = (a, b) => String(b.timestamp || b.date || '').localeCompare(String(a.timestamp || a.date || ''));
+function applyMerged(remote) {
+  const before = stateKey(S);
+  S.deleted = mergeTombs(S.deleted, remote.deleted); S.deletedB = mergeTombs(S.deletedB, remote.deletedB);
+  S.entries = mergeById(S.entries, remote.entries, S.deleted).sort(byNewest);
+  S.budgetExp = mergeById(S.budgetExp, remote.budgetExp, S.deletedB);
+  S.budgets = { ...(remote.budgets || {}), ...S.budgets };
+  resetSigs();
+  return stateKey(S) !== before;
+}
+/* مزامنة واحدة: اسحب ← ادمج ← ارفع فقط إن كان عندنا ما ليس في السحابة */
+async function cloudSync({ manual = false } = {}) {
   if (!cloudReady()) { if (manual) toast('أدخل بيانات JSONBin أولاً', { tone: 'bad' }); return; }
-  ui.cloud = 'busy'; if (manual) render();
-  const stamp = new Date().toISOString();
-  try { await jbCall('PUT', { entries: S.entries, budgetExp: S.budgetExp, budgets: S.budgets, updatedAt: stamp, device: deviceId() });
-    localStorage.setItem(LS.cloudSeen, stamp);
-    ui.cloud = 'ok'; ui.cloudMsg = `آخر رفع: ${new Date().toLocaleTimeString('ar-DZ', { hour: '2-digit', minute: '2-digit' })}`; if (manual) toast('تم الرفع'); }
-  catch (e) { ui.cloud = 'err'; ui.cloudMsg = 'فشل الرفع — تحقّق من المفتاح والمعرّف'; if (manual) toast(ui.cloudMsg, { tone: 'bad' }); }
-  render();
-}
-async function cloudPull(manual) {
-  if (!cloudReady()) return;
-  ui.cloud = 'busy'; if (manual) render();
+  if (CLOUD.busy) { CLOUD.again = true; return; }
+  CLOUD.busy = true; ui.cloud = 'busy'; if (manual) render();
   try {
-    const j = await jbCall('GET');
-    if (Array.isArray(j.entries)) { S.entries = j.entries; S.budgetExp = j.budgetExp || []; S.budgets = j.budgets || {}; writeJSON(LS.entries, S.entries); writeJSON(LS.budgetExp, S.budgetExp); writeJSON(LS.budgets, S.budgets); }
-    localStorage.setItem(LS.cloudSeen, j.updatedAt || '');
-    ui.cloud = 'ok'; ui.cloudMsg = `متزامن • ${S.entries.length} حركة`; if (manual) { toast('تم التحميل من السحابة'); render(); }
-  } catch (e) { ui.cloud = 'err'; ui.cloudMsg = 'فشل التحميل'; if (manual) toast(ui.cloudMsg, { tone: 'bad' }); }
-  render();
+    const remote = await jbCall('GET'), hasRemote = Array.isArray(remote?.entries);
+    const changedHere = hasRemote ? applyMerged(remote) : false;
+    if (changedHere) { writeLocal(); if (remote.device && remote.device !== deviceId()) pingUpdate('كناش', 'وصل تحديث من جهاز آخر'); }
+    const mine = { entries: S.entries, budgetExp: S.budgetExp, budgets: S.budgets, deleted: S.deleted, deletedB: S.deletedB };
+    if (!hasRemote || stateKey(mine) !== stateKey(remote)) {
+      const stamp = new Date().toISOString();
+      await jbCall('PUT', { ...mine, updatedAt: stamp, device: deviceId(), v: 4 });
+      localStorage.setItem(LS.cloudSeen, stamp);
+    }
+    CLOUD.dirty = false;
+    ui.cloud = 'ok'; ui.cloudMsg = `متزامن • ${S.entries.length} حركة • ${new Date().toLocaleTimeString('ar-DZ', { hour: '2-digit', minute: '2-digit' })}`;
+    if (manual) toast('تمت المزامنة');
+    if (changedHere || manual) render(); else updateCloudBadge();
+  } catch (e) {
+    ui.cloud = 'err'; ui.cloudMsg = 'فشلت المزامنة — تحقّق من المفتاح والمعرّف والإنترنت'; if (manual) toast(ui.cloudMsg, { tone: 'bad' }); updateCloudBadge();
+  } finally {
+    CLOUD.busy = false;
+    if (CLOUD.again) { CLOUD.again = false; setTimeout(() => cloudSync(), 500); }
+  }
 }
-/* مزامنة صامتة بين الأجهزة: تسحب فقط إذا التغيير جاي من جهاز آخر، وتتفادى التصادم مع رفع محلي قيد الانتظار */
-async function cloudAutoPull() {
-  if (!cloudReady() || ui.syncing || cloudTimer) return;
+function updateCloudBadge() { const b = $('#btnCloud'); if (b) b.innerHTML = `${ic('cloud')}<i class="dot ${ui.cloud}"></i>`; }
+/* استبدال كامل بنسخة السحابة (زر «تحميل الآن» فقط) */
+async function cloudReplace() {
   try {
-    const j = await jbCall('GET');
-    if (!Array.isArray(j.entries) || !j.device || j.device === deviceId()) return;
-    if (j.updatedAt && j.updatedAt === localStorage.getItem(LS.cloudSeen)) return;
-    const before = S.entries.length;
-    S.entries = j.entries; S.budgetExp = j.budgetExp || []; S.budgets = j.budgets || {};
-    writeJSON(LS.entries, S.entries); writeJSON(LS.budgetExp, S.budgetExp); writeJSON(LS.budgets, S.budgets);
-    localStorage.setItem(LS.cloudSeen, j.updatedAt || '');
-    ui.cloud = 'ok'; ui.cloudMsg = `تحديث تلقائي من جهاز آخر • ${new Date().toLocaleTimeString('ar-DZ', { hour:'2-digit', minute:'2-digit' })}`;
-    render();
-    if (S.entries.length !== before) pingUpdate('كناش', 'وصل تحديث من جهاز آخر');
-  } catch (e) { /* فشل صامت — استقصاء لاحق سيعاود المحاولة */ }
+    const j = await jbCall('GET'); if (!Array.isArray(j.entries)) throw new Error('empty');
+    S.entries = j.entries; S.budgetExp = j.budgetExp || []; S.budgets = j.budgets || {}; S.deleted = j.deleted || {}; S.deletedB = j.deletedB || {};
+    resetSigs(); writeLocal(); CLOUD.dirty = false; ui.cloud = 'ok'; ui.cloudMsg = `مُستبدلة من السحابة • ${S.entries.length} حركة`; toast('تم التحميل من السحابة');
+  } catch { ui.cloud = 'err'; ui.cloudMsg = 'فشل التحميل'; toast(ui.cloudMsg, { tone: 'bad' }); }
+  render();
 }
 function deviceId() { let d = localStorage.getItem(LS.device); if (!d) { d = uid(); localStorage.setItem(LS.device, d); } return d; }
 
@@ -1839,20 +2273,25 @@ async function sendChat() {
   if (!key) { ui.chat.push({ r: 'a', t: 'أضف مفتاح Claude API من الإعدادات لتفعيل الإجابة.' }); render(); return; }
   ui.chat.push({ r: 'a', t: '…' }); render();
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 500, system: buildContext(), messages: ui.chat.filter(m => m.t !== '…').slice(-10).map(m => ({ role: m.r === 'u' ? 'user' : 'assistant', content: m.t })) }) });
+    const res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'server-side-fallback-2026-07-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: 'claude-sonnet-5-5', max_tokens: 2000, output_config: { effort: 'low' }, fallbacks: 'default', system: buildContext(), messages: ui.chat.filter(m => m.t !== '…').slice(-10).map(m => ({ role: m.r === 'u' ? 'user' : 'assistant', content: m.t })) }) });
     const j = await res.json();
     ui.chat.pop();
     if (!res.ok) throw new Error(j?.error?.message || 'خطأ في الاتصال');
+    if (j.stop_reason === 'refusal') throw new Error('رفض المساعد هذا السؤال — أعد صياغته.');
     const txt = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n') || 'لم أفهم، عاود السؤال.';
     ui.chat.push({ r: 'a', t: txt });
   } catch (err) { ui.chat.pop(); ui.chat.push({ r: 'a', t: 'تعذّر الاتصال: ' + err.message }); }
   render();
 }
 
-function boot() {
+async function boot() {
   document.documentElement.setAttribute('data-theme', localStorage.getItem(LS.theme) || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
-  loadAll();
+  await loadAll();
+  if (/^https?:$/.test(location.protocol)) {
+    try { const r = await fetch('/__kanach', { cache: 'no-store' }); const j = await r.json(); SAME_ORIGIN_PROXY = j?.kanach === 'proxy'; } catch {}
+    if ('serviceWorker' in navigator && (location.protocol === 'https:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname))) navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
   
   /* تصحيح تلقائي لحقل الـ proxy المسجل سابقاً في التخزين المحلي */
   if (S.carrier.proxy) {
@@ -1867,7 +2306,7 @@ function boot() {
       if (c !== e.tracking) { e.tracking = c; fixed++; }
     }
   });
-  if (fixed) writeJSON(LS.entries, S.entries);
+  if (fixed) persist();
 
   if (!('adsPaused' in (readJSON(LS.settings, {}) || {}))) { S.settings.adsPaused = !S.entries.some(e => e.type === 'ads'); saveSettings(); }
   render();
@@ -1878,7 +2317,6 @@ function boot() {
     const m = num(S.carrier.interval);
     if (document.visibilityState === 'visible' && m > 0 && Carrier.configured() && (!S.carrier.lastSync || Date.now() - new Date(S.carrier.lastSync) > m * 60000)) syncCarrier({ manual: false });
   });
-  window.addEventListener('beforeunload', () => { if (ui.cloud === 'busy') cloudPush(false); });
 }
 boot();
 </script>
