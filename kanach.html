@@ -854,8 +854,8 @@ const Carrier = {
   /* الوسيط المحلي القديم لا يمرّر POST — نتحقق قبل الرفع */
   async checkProxy() {
     const p = (S.carrier.proxy || '').trim(); if (!p && !SAME_ORIGIN_PROXY) return true;
-    let j = null; try { const r = await fetch(this.base() + '/__kanach'); j = await r.json(); } catch {}
-    if (!j || !j.post) throw new CarrierError('proxy', 'الوسيط المحلي عندك قديم ولا يدعم الرفع. استبدل ملف kanach-proxy.js بالنسخة الجديدة، أغلق نافذة الأمر القديمة، ثم شغّله من جديد: node kanach-proxy.js');
+    let j = null; try { const r = await fetch(this.base() + '/__kanach', { cache: 'no-store' }); j = await r.json(); } catch {}
+    if (j?.kanach === 'proxy' && !j.post) throw new CarrierError('proxy', 'الوسيط المحلي عندك قديم ولا يدعم الرفع. استبدل ملف kanach-proxy.js بالنسخة الجديدة، أغلق نافذة الأمر القديمة، ثم شغّله من جديد: node kanach-proxy.js');
     return true;
   },
   communes(wid) { return this.listAll('/communes/', { wilaya_id: wid }); },
@@ -1022,16 +1022,34 @@ function fvReader(cfg) {
       });
       return best;
     };
-    var closeModal = function (m) {
-      var node = m, x = null;
-      for (var i = 0; i < 5 && node && !x; i++) {
-        node.querySelectorAll('button,a,span,div,i').forEach(function (el) { if (!x && vis(el) && /^[×xX✕✖]$/.test((el.innerText || '').trim())) x = el; });
-        node = node.parentElement;
+    /* إغلاق نافذة التفاصيل: زر بنص ×، أو زر/أيقونة إغلاق (close, times, xmark, data-dismiss)، أو النقر على الخلفية، أو Escape */
+    var closeModal = async function (m, id) {
+      var scopes = [], n = m; for (var i = 0; i < 6 && n; i++) { scopes.push(n); n = n.parentElement; }
+      var pick = function () {
+        for (var s = 0; s < scopes.length; s++) {
+          var els = scopes[s].querySelectorAll('button,a,span,div,i,img,svg,[role=button]');
+          for (var j = 0; j < els.length; j++) {
+            var el = els[j]; if (!vis(el)) continue;
+            var txt = (el.innerText || '').trim(), cls = String(el.className && el.className.baseVal !== undefined ? el.className.baseVal : el.className || '').toLowerCase();
+            var lab = ((el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || '') + ' ' + (el.getAttribute('alt') || '') + ' ' + (el.getAttribute('src') || '')).toLowerCase();
+            if (/^[×xX✕✖✗]$/.test(txt) || el.hasAttribute('data-dismiss') || el.hasAttribute('data-bs-dismiss') || /(^|[\s_-])(btn-)?close([\s_-]|$)|fa-times|fa-xmark|fa-close|icon-close|bi-x/.test(cls) || /close|fermer|times|xmark/.test(lab)) return el.closest('button,a,[role=button]') || el;
+          }
+        }
+        return null;
+      };
+      var x = pick(); if (x) { x.click(); await sleep(250); if (!findModal(id)) return true; }
+      // النقر على الخلفية خارج النافذة (Bootstrap يغلق هكذا)
+      for (var b = 0; b < scopes.length; b++) {
+        var st = getComputedStyle(scopes[b]);
+        if (st.position === 'fixed' && scopes[b].getBoundingClientRect().width >= innerWidth * 0.9) { scopes[b].dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); scopes[b].click(); await sleep(250); if (!findModal(id)) return true; }
       }
-      if (x) x.click(); else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+      document.querySelectorAll('.modal-backdrop').forEach(function (bd) { bd.click(); });
+      [document, document.body, m].forEach(function (t) { t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true })); });
+      await sleep(250);
+      return !findModal(id);
     };
     var ok = function (r) { var s = strip(r.status.join(' ')); return /confirme avec le client/.test(s) && !/annul/.test(s); };
-    var todo = rows.map(function (r, i) { return i; }).filter(function (i) { return ok(rows[i]); }), failed = 0;
+    var todo = rows.map(function (r, i) { return i; }).filter(function (i) { return ok(rows[i]); }), failed = 0, stuck = 0;
     for (var k = 0; k < todo.length; k++) {
       var i = todo[k], r = rows[i], tr = refs[i];
       box.textContent = 'كناش: قراءة تفاصيل ' + (k + 1) + ' / ' + todo.length;
@@ -1055,26 +1073,35 @@ function fvReader(cfg) {
         sale: num(g(/Prix de vente\s*:\s*\n?\s*([\d\s]+)/i)), items: items,
         product: items.length ? items[0].name : '', qty: items.length ? items[0].qty : 1
       };
-      closeModal(m); await sleep(300);
-      if (findModal(r.id)) { failed++; break; }
+      // لا نتوقف إن بقيت النافذة مفتوحة: البيانات قُرئت، والطلبية التالية تُعرف برقمها
+      if (!(await closeModal(m, r.id))) stuck++;
     }
     var payload = { kanach: 'vonder', v: 3, at: new Date().toISOString(), rows: rows };
-    var msg = rows.length + ' طلبية (' + todo.length + ' مؤكدة)' + (failed ? ' — تعذّرت قراءة ' + failed : '');
-    try {
-      box.textContent = 'كناش: إرسال…';
-      var res = await fetch(cfg.url + '/__kanach/inbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      box.textContent = 'كناش ✓ أُرسلت ' + msg; setTimeout(function () { box.remove(); }, 4000);
-    } catch (e) {
-      // الإرسال المباشر مُنع (Chrome يطلب إذن «الشبكة المحلية»، أو الوسيط متوقف): نفتح كناش في تبويب ونسلّمه الطلبيات بـ postMessage
-      box.innerHTML = '';
-      var t1 = document.createElement('div'); t1.textContent = 'كناش: قُرئت ' + msg; t1.style.marginBottom = '8px'; box.appendChild(t1);
-      var b1 = document.createElement('button'), b2 = document.createElement('button');
-      [b1, b2].forEach(function (b) { b.style.cssText = 'font:600 14px system-ui;padding:8px 14px;border-radius:9px;border:0;margin:0 4px;cursor:pointer'; box.appendChild(b); });
-      b1.textContent = 'افتح كناش وأرسل'; b1.style.background = '#fff'; b1.style.color = '#12463F';
-      b2.textContent = 'نسخ'; b2.style.background = 'rgba(255,255,255,.15)'; b2.style.color = '#fff';
-      b1.onclick = function () {
-        var win = window.open(cfg.url + '/', 'kanach'), sent = false;
+    var got = todo.filter(function (i) { return rows[i].detail; }).length;
+    var msg = got + ' طلبية مؤكدة' + (failed ? ' — تعذّرت قراءة تفاصيل ' + failed : '');
+    if (!got) { box.textContent = 'كناش: لا توجد طلبيات «Confirmé avec le client» في هذه الصفحة' + (failed ? ' (تعذّرت قراءة ' + failed + ')' : ''); setTimeout(function () { box.remove(); }, 6000); return; }
+    var sentOK = false;
+    if (cfg.inbox) {
+      try {
+        box.textContent = 'كناش: إرسال…';
+        var res = await fetch(cfg.inbox + '/__kanach/inbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        sentOK = res.ok;
+      } catch (e) {}
+    }
+    if (sentOK) { box.textContent = 'كناش ✓ أُرسلت ' + msg; setTimeout(function () { box.remove(); }, 4000); return; }
+    // بدون وسيط محلي: زر يفتح كناش (إن كان على رابط http/https) ويسلّمه الطلبيات، أو زر نسخ ثم «لصق من FreeVendor» في كناش
+    box.innerHTML = '';
+    var t1 = document.createElement('div'); t1.textContent = 'كناش: قُرئت ' + msg; t1.style.marginBottom = '8px'; box.appendChild(t1);
+    var mk = function (label, primary) { var b = document.createElement('button'); b.textContent = label; b.style.cssText = 'font:600 14px system-ui;padding:8px 14px;border-radius:9px;border:0;margin:0 4px;cursor:pointer;' + (primary ? 'background:#fff;color:#12463F' : 'background:rgba(255,255,255,.15);color:#fff'); box.appendChild(b); return b; };
+    var copy = function () {
+      var out = JSON.stringify(payload);
+      (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(out) : Promise.reject())
+        .then(function () { box.textContent = '✓ نُسخت ' + msg + ' — ارجع إلى كناش واضغط «لصق من FreeVendor»'; setTimeout(function () { box.remove(); }, 7000); })
+        .catch(function () { prompt('انسخ هذا النص والصقه في كناش:', out); });
+    };
+    if (cfg.app) {
+      mk('افتح كناش وأرسل', true).onclick = function () {
+        var win = window.open(cfg.app, 'kanach'), sent = false;
         var onMsg = function (ev) {
           if (ev.source !== win || !ev.data) return;
           if (ev.data.kanachReady && !sent) { sent = true; win.postMessage(payload, '*'); }
@@ -1083,16 +1110,24 @@ function fvReader(cfg) {
         window.addEventListener('message', onMsg);
         var tries = 0, iv = setInterval(function () { if (sent || ++tries > 40) return clearInterval(iv); try { win.postMessage({ kanachPing: true }, '*'); } catch (x) {} }, 500);
       };
-      b2.onclick = function () {
-        var out = JSON.stringify(payload);
-        (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(out).then(function () { box.textContent = 'نُسخت — الصقها في كناش ← الإعدادات ← FreeVendor'; setTimeout(function () { box.remove(); }, 5000); }) : Promise.reject())
-          .catch(function () { prompt('انسخ هذا النص والصقه في كناش:', out); });
-      };
-    }
+      mk('نسخ', false).onclick = copy;
+    } else mk('نسخ إلى كناش', true).onclick = copy;
+    var bx = mk('✕', false); bx.onclick = function () { box.remove(); };
   })();
 }
-const kanachURL = () => SAME_ORIGIN_PROXY ? location.origin : (Carrier.base().startsWith('https://api.yalidine') ? 'http://localhost:8787' : Carrier.base());
-const fvBookmarklet = () => 'javascript:' + encodeURIComponent(`(${fvReader.toString()})(${JSON.stringify({ url: kanachURL() })})`);
+/* إلى أين يرسل القارئ؟ صندوق الوارد فقط إن كان الوسيط وسيطَ كناش فعلاً (وليس Cloudflare Worker يمرّر إلى Yalidine)،
+   وتبويب كناش فقط إن كان كناش مفتوحاً من رابط http/https (صفحات الإنترنت لا تستطيع فتح ملف file:// على حاسوبك) */
+let KANACH_PROXY = '';
+async function detectKanachProxy() {
+  if (SAME_ORIGIN_PROXY) return (KANACH_PROXY = location.origin);
+  const p = (S.carrier.proxy || '').trim().replace(/\/+$/, '');
+  KANACH_PROXY = '';
+  if (!p) return '';
+  try { const r = await fetch(Carrier.base() + '/__kanach', { cache: 'no-store' }); const j = await r.json(); if (j?.kanach === 'proxy') KANACH_PROXY = Carrier.base(); } catch {}
+  return KANACH_PROXY;
+}
+const kanachApp = () => /^https?:$/.test(location.protocol) ? location.origin + location.pathname : '';
+const fvBookmarklet = () => 'javascript:' + encodeURIComponent(`(${fvReader.toString()})(${JSON.stringify({ inbox: KANACH_PROXY, app: kanachApp() })})`);
 
 /* ---- كتالوج المنتجات: سعر الشراء والوزن لكل منتج (FreeVendor لا يعرض سعر شرائك) ---- */
 const prodKey = name => norm(name).replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
@@ -1377,9 +1412,9 @@ async function autoPush() {
 /* ---- صندوق الوارد: الوسيط المحلي يستقبل ما يرسله قارئ FreeVendor ---- */
 let inboxTimer = null;
 async function pollInbox() {
-  if (!(SAME_ORIGIN_PROXY || (S.carrier.proxy || '').trim())) return;
+  if (!KANACH_PROXY) return;
   const after = localStorage.getItem('kanach_inbox_after') || '';
-  let j; try { const r = await fetch(`${kanachURL()}/__kanach/inbox?after=${encodeURIComponent(after)}`, { cache: 'no-store' }); if (!r.ok) return; j = await r.json(); } catch { return; }
+  let j; try { const r = await fetch(`${KANACH_PROXY}/__kanach/inbox?after=${encodeURIComponent(after)}`, { cache: 'no-store' }); if (!r.ok) return; j = await r.json(); } catch { return; }
   const items = (j.items || []).filter(x => x.id > after);
   if (!items.length) return;
   for (const it of items) { localStorage.setItem('kanach_inbox_after', it.id); receiveFv(it.payload || { rows: [] }); }
@@ -1403,6 +1438,16 @@ function receiveFv(payload, ev) {
   return res;
 }
 if (window.opener) try { window.opener.postMessage({ kanachReady: true }, '*'); } catch {}
+/* نص منسوخ من قارئ FreeVendor ← استيراد. يرجع true عند النجاح */
+function importFvText(raw, quiet) {
+  raw = String(raw || '').trim();
+  if (!raw) { if (!quiet) toast('الصق النص المنسوخ أولاً.', { tone:'bad' }); return false; }
+  let j; try { j = JSON.parse(raw); } catch { if (!quiet) toast('النص غير صالح. انسخه من جديد بالزر.', { tone:'bad' }); return false; }
+  if (j?.kanach !== 'vonder' || !Array.isArray(j.rows)) { if (!quiet) toast('هذا ليس نصّ كناش.', { tone:'bad' }); return false; }
+  if (Sheet.isOpen()) Sheet.close();
+  receiveFv(j);
+  return true;
+}
 function scheduleInbox() { clearInterval(inboxTimer); inboxTimer = setInterval(() => { if (document.visibilityState === 'visible') pollInbox(); }, 10000); pollInbox(); }
 
 /* ---- نافذة الكتالوج: سعر الشراء والوزن لكل منتج ---- */
@@ -1785,7 +1830,7 @@ function viewCarrier() {
       ${noTrack ? `<div class="note warn" style="margin-top:12px">${ic('alert', 18)}<div>${noTrack} طلبية معلّقة بلا رقم تتبع — <button class="lnk" style="color:var(--brand);font-weight:700" data-act="go" data-tab="orders" data-filter="notrack">أضف الأرقام</button> لتُتابَع تلقائياً.</div></div>` : ''}`
     : `<ol style="margin:14px 18px 0;line-height:1.9;color:var(--ink-2);font-size:14px"><li>من حسابك في Yalidine افتح صفحة الـAPI وأنشئ مفتاحاً (API ID + Token).</li><li>الصقهما أدناه واضغط «اختبار الاتصال».</li><li>أضف رقم التتبع لكل طلبية — وسيتكفّل التطبيق بالباقي.</li></ol>`}
   </section>
-  ${conf ? `<section class="card pad"><div class="row"><span class="ico info">${ic('upload', 20)}</span><div class="grow"><b>رفع طلبيات FreeVendor إلى Yalidine</b><div class="sub">${readyToPush().length ? readyToPush().length + ' طلبية مؤكدة جاهزة للرفع' : 'لا توجد طلبيات جاهزة — استورد من FreeVendor أولاً (الإعدادات ← استيراد طلبيات FreeVendor)'}</div></div></div><button class="btn block" style="margin-top:12px" data-act="push-open">رفع إلى Yalidine…</button><button class="btn sec2 block" style="margin-top:8px" data-act="go" data-tab="settings">الإعدادات ← استيراد FreeVendor</button></section>` : ''}
+  ${conf ? `<section class="card pad"><div class="row"><span class="ico info">${ic('upload', 20)}</span><div class="grow"><b>رفع طلبيات FreeVendor إلى Yalidine</b><div class="sub">${readyToPush().length ? readyToPush().length + ' طلبية مؤكدة جاهزة للرفع' : 'لا توجد طلبيات جاهزة — استورد من FreeVendor أولاً (الإعدادات ← استيراد طلبيات FreeVendor)'}</div></div></div><button class="btn block" style="margin-top:12px" data-act="push-open">رفع إلى Yalidine…</button><div class="row" style="margin-top:8px"><button class="btn sec2 grow" data-act="fv-paste">${ic('download', 18)}<span>لصق من FreeVendor</span></button><button class="btn ghost" data-act="go" data-tab="settings" data-sub="vonder">الإعداد</button></div></section>` : ''}
   ${reviewHTML()}
   <details class="acc" id="setupAcc" ${!conf || ui.openSetup ? 'open' : ''}><summary>${ic('key', 20)}بيانات الربط</summary><div class="inner">
     <label class="field"><span>API ID</span><input type="text" class="ltr" autocomplete="off" data-bind="carrier.apiId" value="${esc(c.apiId)}" placeholder="مثال: 1234567890"></label>
@@ -2075,7 +2120,8 @@ function viewSettings() {
     <ol class="sub" style="margin:0 0 10px;padding-inline-start:18px;line-height:1.9"><li>شغّل الوسيط على حاسوبك: <code class="n">node kanach-proxy.js</code> وافتح كناش من <span class="n">http://localhost:8787</span></li>
       <li>اسحب الزر التالي إلى شريط المفضلة (مرة واحدة)</li><li>في freevendor.space افتح «Gérer les commandes» واضغط الزر: تُقرأ الطلبيات «Confirmé avec le client» وتصل هنا وحدها خلال ثوانٍ</li></ol>
     <div class="row wrap-r" style="margin:0 0 12px"><a class="btn" id="vonderBm" href="#" draggable="true" style="display:inline-flex" onclick="event.preventDefault();toast('اسحب الزر إلى شريط المفضلة، لا تضغط عليه هنا.')">⇪ كناش ← FreeVendor</a>
-      <span class="badge ${SAME_ORIGIN_PROXY || (S.carrier.proxy || '').trim() ? 'pos' : 'wait'}">${SAME_ORIGIN_PROXY || (S.carrier.proxy || '').trim() ? 'الاستقبال المباشر يعمل' : 'بدون وسيط: الصق النص يدوياً'}</span></div>
+      <span class="badge ${KANACH_PROXY ? 'pos' : 'info'}">${KANACH_PROXY ? 'تصل الطلبيات وحدها (الوسيط المحلي)' : kanachApp() ? 'عبر زر «افتح كناش وأرسل»' : 'عبر زر «نسخ» ثم «لصق من FreeVendor»'}</span></div>
+    <button class="btn sec2 block" style="margin-bottom:10px" data-act="fv-paste">${ic('download', 18)}<span>لصق من FreeVendor</span></button>
     <div class="sw"><div class="tx"><b>رفع تلقائي إلى Yalidine</b><span>تُنشأ الطرود فور وصول الطلبيات — فقط ما طابقت ولايته وبلديته (أو مكتبه) بثقة كاملة وهاتفه صالح وزبونه بلا سوابق. الباقي ينتظر مراجعتك.</span></div><label class="toggle"><input type="checkbox" data-bind="settings.autoPush" data-render ${s.autoPush ? 'checked' : ''} aria-label="رفع تلقائي"><i></i></label></div>
     <div class="sw"><div class="tx"><b>Livraison gratuite عند Yalidine</b><span>«Prix de vente» من FreeVendor يشمل التوصيل، فيدفع الزبون المبلغ نفسه ويقتطع Yalidine رسومه منه. أوقفه فقط إن كنت تريد أن يضيف Yalidine سعره فوق المبلغ.</span></div><label class="toggle"><input type="checkbox" data-bind="settings.fvFreeShipping" ${s.fvFreeShipping !== false ? 'checked' : ''} aria-label="Livraison gratuite"><i></i></label></div>
     <div class="two" style="margin-top:10px"><label class="field"><span>الوزن الافتراضي (كغ)</span><input type="number" inputmode="decimal" step="0.1" data-bind="settings.defWeight" data-num value="${num(s.defWeight)}"><small>يُستعمل إن لم يُحدَّد وزن المنتج.</small></label>
@@ -2432,14 +2478,14 @@ const A = {
   'cloud-up': () => cloudSync({ manual: true }),
   'push-open': () => openPush(),
   'push-send': () => pushSend(),
-  'vonder-import': () => {
-    const raw = ($('#vonderPaste')?.value || '').trim(); if (!raw) { toast('الصق النص المنسوخ أولاً.', { tone:'bad' }); return; }
-    let j; try { j = JSON.parse(raw); } catch { toast('النص غير صالح. انسخه من جديد بالزر.', { tone:'bad' }); return; }
-    if (j.kanach !== 'vonder' || !Array.isArray(j.rows)) { toast('هذا ليس نصّ كناش.', { tone:'bad' }); return; }
-    const r = importVonder(j.rows); commit();
-    toast(`FreeVendor: ${r.added} جديدة • ${r.dup} موجودة • ${r.skipped} مُتجاهَلة${r.risky ? ` • ⚠ ${r.risky} من زبائن لهم مرتجعات` : ''}`, r.missing.size ? { action: { label: 'أكمل أسعار الشراء', fn: () => openCatalog([...r.missing]) } } : {});
-    if (r.added) pingUpdate('كناش — FreeVendor', `${r.added} طلبية جديدة`);
-    if (S.settings.autoPush) autoPush();
+  'vonder-import': () => { importFvText(($('#vonderPaste') || $('#fvPasteBox'))?.value || ''); },
+  'fv-paste': async () => {
+    let raw = '';
+    try { raw = await navigator.clipboard.readText(); } catch {}
+    if (raw && importFvText(raw, true)) return;
+    Sheet.open({ title: 'لصق من FreeVendor', body: `<div class="sub" style="margin-bottom:10px">${raw ? 'ما في الحافظة ليس طلبيات كناش.' : 'المتصفح لم يسمح بقراءة الحافظة.'} اضغط «نسخ إلى كناش» في صفحة FreeVendor، ثم الصق هنا (Ctrl+V).</div>
+      <textarea id="fvPasteBox" class="ltr" rows="6" placeholder='{"kanach":"vonder",...}'></textarea>`, footer: `<button class="btn grow" data-act="vonder-import">استيراد</button>` });
+    setTimeout(() => $('#fvPasteBox')?.focus(), 50);
   },
   'catalog-open': () => openCatalog(),
   'catalog-save': () => {
@@ -2474,7 +2520,7 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const fn = A[b.dataset.act]; if (fn) { e.preventDefault(); fn(b.dataset); }
 });
-let recalcT = null;
+let recalcT = null, proxyT = null;
 document.addEventListener('input', e => {
   const t = e.target, k = t.dataset?.f;
   if (k && F) { F[k] = t.type === 'checkbox' ? t.checked : t.value; if (k === 'paste') applyParsed(parseCustomerMsg(t.value)); if (k === 'manual') $('#sheetBody').innerHTML = formBody(); updateForm(); }
@@ -2486,6 +2532,7 @@ document.addEventListener('input', e => {
     if (t.dataset.title) $('#appName').textContent = tgt[key] || 'كناش';
     if (t.dataset.render) render();
     if (b === 'carrier.auto' || b === 'carrier.interval') scheduleAutoSync();
+    if (b === 'carrier.proxy') { clearTimeout(proxyT); proxyT = setTimeout(detectKanachProxy, 800); }
     if (t.dataset.recalc) { clearTimeout(recalcT); recalcT = setTimeout(() => { if (recomputePending()) persist(); }, 400); }
   }
 });
@@ -2692,7 +2739,7 @@ async function boot() {
   if (mig?.n) toast(`صُحِّحت فائدة ${mig.n} طلبية بأسعار التوصيل الحقيقية: ${mig.delta >= 0 ? 'زادت' : 'نقصت'} بـ ${fmtNum(Math.abs(mig.delta))} دج — التفاصيل في الإعدادات`, { action: { label: 'عرض', fn: () => go('settings', { scrollTo: 'sec-fees' }) } });
   initCloud();
   scheduleAutoSync();
-  scheduleInbox();
+  detectKanachProxy().then(() => { scheduleInbox(); if (ui.tab === 'settings') render(); });
   if (Carrier.configured()) setTimeout(() => syncCarrier({ manual: false }), 1200);
   document.addEventListener('visibilitychange', () => {
     const m = num(S.carrier.interval);

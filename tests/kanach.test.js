@@ -149,7 +149,9 @@ const eq = (name, got, want) => {
     {
       const row = (id, prices, status, client, seller) => `<tr><td><span class="b">#000${id}</span></td><td>${prices.map(p => `<div>${p} DZD</div>`).join('')}</td>
         <td><button>${status}</button><button>Note</button></td><td>${client.join('<br>')}</td><td><span>${seller} DZD</span></td><td><button class="eye" onclick="openM('${id}')"><i>👁</i></button></td></tr>`;
-      const modal = (id, d) => `<div id="m${id}" class="modal" style="display:none;position:fixed;inset:0;background:#fff"><span class="x" onclick="this.parentElement.style.display='none'">×</span>
+      // نافذة 1: زر إغلاق بأيقونة بلا نص (مثل FreeVendor) • نافذة 2: لا زر، تُغلق بالنقر على الخلفية فقط
+      const modal = (id, d, how) => `<div id="m${id}" class="modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4)" ${how === 'backdrop' ? `onclick="if(event.target===this)this.style.display='none'"` : ''}><div class="dlg" style="background:#fff;margin:40px;padding:20px">
+        ${how === 'icon' ? `<button type="button" class="btn-x" onclick="document.getElementById('m${id}').style.display='none'"><i class="fa fa-times"></i></button>` : ''}
         <button>Imprimer</button><p>- Numéro de commande : #000${id}</p><p>- Statut : <span>Annulé</span></p><p>- Informations client :</p>
         <p>- Client : ${d.client}</p><p>- Numéro de téléphone : ${d.phone}</p><p>- La wilaya de : ${d.wilaya}</p><p>- La commune : ${d.commune}</p><p>- L'adresse : ${d.address}</p><p>- Questions et remarques : /</p>
         <table><tr><th>Produit</th><th>Quantité</th><th>Prix</th><th>Prix de cet quantité</th><th>Plus d'informations</th></tr><tr><td>${d.product}</td><td>1</td><td>${d.total}</td><td>${d.total} DZD</td><td>- Taille:<br>- Couleur:</td></tr></table>
@@ -157,36 +159,58 @@ const eq = (name, got, want) => {
         <div style="display:flex;justify-content:space-between"><div>Type de livraison :</div><div>${d.type}</div></div>
         <div style="display:flex;justify-content:space-between"><div>Prix de livraison :</div><div>${d.fee} DZD</div></div>
         <div style="display:flex;justify-content:space-between"><div>Prix total :</div><div>${d.total + d.fee} DZD</div></div>
-        <div style="display:flex;justify-content:space-between"><div>Prix de vente :</div><div>${d.total + d.fee + d.seller} DZD</div></div></div>`;
+        <div style="display:flex;justify-content:space-between"><div>Prix de vente :</div><div>${d.total + d.fee + d.seller} DZD</div></div></div></div>`;
       const D1 = { client: 'nawal fetouh', phone: '0557439912', wilaya: 'Oran', commune: 'Oran', address: 'hai el hamri', product: 'Dell Laptop | Intel Core i3 10th Gen - 8GB RAM', total: 48800, fee: 600, seller: 1000, type: 'Livraison à domicile' };
       const D2 = { client: 'هادي حسن', phone: '0668882231', wilaya: 'médéa', commune: 'Médéa', address: 'centre', product: 'HP EliteBook', total: 44000, fee: 350, seller: 1350, type: 'Stop desk' };
       const html = `<!doctype html><meta charset="utf-8"><body><table><tr><th>Numéro de commande</th><th>Prix total</th><th>Statut</th><th>Le client</th><th>Le vendeur</th><th>Options</th></tr>
         ${row('585899', [48800, 600, 49400, 50400], 'Confirmè avec le client', ['nawal fetouh', '0557439912', 'Oran'], 1000)}
         ${row('585893', [44000, 550, 44550, 45550], 'Annulé', ['هادي حسن', '0668882231', 'médéa'], 1000)}
         ${row('585888', [44000, 350, 44350, 45700], 'Confirmè avec le client', ['هادي حسن', '0668882231', 'médéa'], 1350)}
-        </table>${modal('585899', D1)}${modal('585888', D2)}<script>function openM(id){document.getElementById('m'+id).style.display='block'}</script>`;
+        </table>${modal('585899', D1, 'icon')}${modal('585888', D2, 'backdrop')}<script>function openM(id){document.getElementById('m'+id).style.display='block'}</script>`;
       const fv = await ctx.newPage();
       await fv.route('https://freevendor.space/**', r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: html }));
       await fv.goto('https://freevendor.space/home/account');
+      const codeFor = cfg => page.evaluate(c => decodeURIComponent(fvBookmarklet().slice('javascript:'.length)).replace(/\)\(\{.*\}\)$/, ')(' + JSON.stringify(c) + ')'), cfg);
+      eq('القارئ يعرف الوسيط المحلي', await page.evaluate(() => KANACH_PROXY === location.origin), true);
+      const appURL = URL;
       fv.on('dialog', d => { errors.push('dialog: ' + d.message()); d.dismiss(); });
-      const code = await page.evaluate(() => decodeURIComponent(fvBookmarklet().slice('javascript:'.length)));
-      // 1) بلا إذن «الشبكة المحلية»: يظهر زر «افتح كناش وأرسل» ويسلّم الطلبيات لتبويب كناش بـ postMessage
+      const run = async cfg => { await fv.goto('https://freevendor.space/home/account'); await fv.evaluate(c => (0, eval)(c), await codeFor(cfg)); };
+      // 1) كناش مفتوح من رابط http: زر «افتح كناش وأرسل» يسلّم الطلبيات بـ postMessage (بلا إذن الشبكة المحلية)
       await page.evaluate(() => { S.entries = []; S.deleted = {}; resetSigs(); persist(); });
-      await fv.evaluate(c => (0, eval)(c), code);
+      await run({ inbox: '', app: appURL });
       await fv.waitForSelector('text=افتح كناش وأرسل', { timeout: 15000 });
+      eq('القراءة كاملة رغم نافذة بلا نص إغلاق', await fv.evaluate(() => document.body.innerText.includes('قُرئت 2 طلبية مؤكدة') && !document.body.innerText.includes('تعذّرت')), true);
       const [kan] = await Promise.all([ctx.waitForEvent('page'), fv.click('text=افتح كناش وأرسل')]);
       await fv.waitForFunction(() => /وصلت/.test(document.body.innerText), null, { timeout: 15000 });
       eq('postMessage: الطلبيات وصلت لتبويب كناش', await kan.evaluate(() => S.entries.map(e => e.vonderId).sort()), ['000585888', '000585899']);
+      await kan.close();
       await page.waitForFunction(() => S.entries.length === 2, null, { timeout: 5000 });
       eq('التبويب الآخر حدّث نفسه (BroadcastChannel)', await page.evaluate(() => S.entries.map(e => e.vonderId).sort()), ['000585888', '000585899']);
-      await kan.close();
-      // 2) مع الإذن: إرسال مباشر إلى الوسيط ثم يلتقطها كناش من صندوق الوارد
+      // 2) كناش مفتوح من ملف (file://) بلا وسيط: «نسخ إلى كناش» ثم «لصق من FreeVendor»
+      await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'https://freevendor.space' });
+      await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: appURL.replace(/\/$/, '') });
+      await page.evaluate(() => { S.entries = []; S.deleted = {}; resetSigs(); persist(); });
+      await run({ inbox: '', app: '' });
+      await fv.waitForSelector('text=نسخ إلى كناش', { timeout: 15000 });
+      eq('بلا رابط لكناش لا يظهر زر الفتح', await fv.locator('text=افتح كناش وأرسل').count(), 0);
+      await fv.click('text=نسخ إلى كناش');
+      await fv.waitForFunction(() => /نُسخت/.test(document.body.innerText), null, { timeout: 5000 });
+      await page.bringToFront();
+      await page.evaluate(() => A['fv-paste']());
+      await page.waitForFunction(() => S.entries.length === 2, null, { timeout: 5000 });
+      eq('الحافظة: الطلبيات وصلت', await page.evaluate(() => S.entries.map(e => e.vonderId).sort()), ['000585888', '000585899']);
+      // 3) مع إذن الشبكة المحلية: إرسال مباشر إلى الوسيط ثم يلتقطها كناش من صندوق الوارد
       await ctx.grantPermissions(['local-network-access'], { origin: 'https://freevendor.space' });
-      await fv.reload();
-      await fv.evaluate(c => (0, eval)(c), code);
+      await run({ inbox: appURL.replace(/\/$/, ''), app: appURL });
       await fv.waitForFunction(() => /أُرسلت/.test(document.body.innerText), null, { timeout: 15000 });
       await fv.close();
-
+      await page.route('**/fakeworker/**', r => r.fulfill({ status: 400, json: { error: { message: 'Invalid API ID format. It must be numeric and up to 20 characters.', code: 400 } } }));
+      // 4) Cloudflare Worker كوسيط: ليس وسيط كناش، فلا استطلاع لصندوق الوارد ولا رسالة «الوسيط قديم»
+      eq('Worker لا يُعامَل كوسيط كناش', await page.evaluate(async () => {
+        const keep = [SAME_ORIGIN_PROXY, S.carrier.proxy]; SAME_ORIGIN_PROXY = false; S.carrier.proxy = location.origin + '/fakeworker';
+        const k = await detectKanachProxy(); let threw = false; try { await Carrier.checkProxy(); } catch { threw = true; }
+        [SAME_ORIGIN_PROXY, S.carrier.proxy] = keep; await detectKanachProxy(); return [k, threw];
+      }), ['', false]);
       // Yalidine وهمي: نتحقق مما يُرسَل فعلاً
       const sent = [];
       await page.route(/\/(wilayas|communes|centers|parcels)\//, async r => {
