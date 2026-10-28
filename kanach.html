@@ -442,7 +442,7 @@ const LS = {
   jbId:'jsonbin_id', jbKey:'jsonbin_key', device:'device_id', lastChange:'local_last_change', draft:'kanach_last_vonder', cloudSeen:'kanach_cloud_seen'
 };
 const DEFAULT_SETTINGS = { appName:'كناش', adsPaused:true, defPrice:11700, defProfit:1048, defSeller:1150, defTaxe:250, soundAlert:true, browserNotif:false,
-  appFeePct:6, fixedFee:0, codPct:0.75, originWilaya:'Oran', defShip:'home', assumeRate:80, callScript:true };
+  appFeePct:6, fixedFee:0, codPct:0.75, originWilaya:'Oran', defShip:'home', assumeRate:80, callScript:true, autoPush:false, fvFreeShipping:true, defWeight:1 };
 const DEFAULT_CARRIER  = { provider:'yalidine', apiId:'', apiToken:'', proxy:'', auto:true, interval:30, netMode:'est', extraFixed:0, extraPct:0, lastSync:null, log:[], undo:null };
 
 const readJSON = (k, fb) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } };
@@ -467,9 +467,9 @@ const IDB = {
   get(k) { return this.tx('readonly', st => st.get(k)); },
   setMany(obj) { return this.tx('readwrite', st => { Object.entries(obj).forEach(([k, v]) => st.put(v, k)); }); }
 };
-const DATA_KEYS = { entries: LS.entries, budgetExp: LS.budgetExp, budgets: LS.budgets, deleted: 'kanach_deleted', deletedB: 'kanach_deletedB' };
+const DATA_KEYS = { entries: LS.entries, budgetExp: LS.budgetExp, budgets: LS.budgets, deleted: 'kanach_deleted', deletedB: 'kanach_deletedB', catalog: 'kanach_catalog' };
 
-const S = { entries: [], budgetExp: [], budgets: {}, deleted: {}, deletedB: {}, settings: { ...DEFAULT_SETTINGS }, carrier: { ...DEFAULT_CARRIER } };
+const S = { entries: [], budgetExp: [], budgets: {}, deleted: {}, deletedB: {}, catalog: {}, settings: { ...DEFAULT_SETTINGS }, carrier: { ...DEFAULT_CARRIER } };
 const ui = {
   tab:'home', period:'month', filter:'all', search:'', limit:40, rTab:'summary', rPeriod:'month', crmQ:'', crmF:'all',
   review:null, syncing:false, cloud:'idle', cloudMsg:'', chat:[], setSub:'', budgetMonth:iso().slice(0, 7), openSetup:null, calc:null
@@ -478,7 +478,7 @@ const ui = {
 async function loadAll() {
   let d = null;
   if (await IDB.open()) {
-    try { const e = await IDB.get('entries'); if (Array.isArray(e)) d = { entries: e, budgetExp: await IDB.get('budgetExp'), budgets: await IDB.get('budgets'), deleted: await IDB.get('deleted'), deletedB: await IDB.get('deletedB') }; } catch {}
+    try { const e = await IDB.get('entries'); if (Array.isArray(e)) d = { entries: e, budgetExp: await IDB.get('budgetExp'), budgets: await IDB.get('budgets'), deleted: await IDB.get('deleted'), deletedB: await IDB.get('deletedB'), catalog: await IDB.get('catalog') }; } catch {}
   }
   if (!d) {
     let e = readJSON(LS.entries, null);
@@ -486,12 +486,12 @@ async function loadAll() {
       const old = readJSON('dailyEntries', []);
       e = Array.isArray(old) ? old.map(x => ({ ...x, status: x.status || (['vonder','sonazone'].includes(x.type) ? 'delivered' : 'completed'), myProfit: x.myProfit || x.amount || 0 })) : [];
     }
-    d = { entries: e, budgetExp: readJSON(LS.budgetExp, []), budgets: readJSON(LS.budgets, {}), deleted: readJSON(DATA_KEYS.deleted, {}), deletedB: readJSON(DATA_KEYS.deletedB, {}) };
+    d = { entries: e, budgetExp: readJSON(LS.budgetExp, []), budgets: readJSON(LS.budgets, {}), deleted: readJSON(DATA_KEYS.deleted, {}), deletedB: readJSON(DATA_KEYS.deletedB, {}), catalog: readJSON(DATA_KEYS.catalog, {}) };
     if (IDB.db) { try { await IDB.setMany(d); localStorage.setItem('kanach_idb', '1'); } catch {} }
   }
   S.entries = Array.isArray(d.entries) ? d.entries : [];
   S.budgetExp = Array.isArray(d.budgetExp) ? d.budgetExp : [];
-  S.budgets = d.budgets || {}; S.deleted = d.deleted || {}; S.deletedB = d.deletedB || {};
+  S.budgets = d.budgets || {}; S.deleted = d.deleted || {}; S.deletedB = d.deletedB || {}; S.catalog = d.catalog || {};
   S.settings = { ...DEFAULT_SETTINGS, ...(readJSON(LS.settings, {}) || {}) };
   S.carrier  = { ...DEFAULT_CARRIER,  ...(readJSON(LS.carrier, {}) || {}) };
   if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
@@ -511,12 +511,23 @@ function stamp(list, sigs, tombs, now) {
 }
 let saveQ = Promise.resolve();
 function writeLocal() {
-  const snap = { entries: S.entries, budgetExp: S.budgetExp, budgets: S.budgets, deleted: S.deleted, deletedB: S.deletedB };
-  if (IDB.db) { saveQ = saveQ.then(() => IDB.setMany(snap)).catch(() => toast('تعذّر الحفظ في قاعدة المتصفح. حمّل نسخة احتياطية الآن.', { tone:'bad' })); return true; }
+  const snap = { entries: S.entries, budgetExp: S.budgetExp, budgets: S.budgets, deleted: S.deleted, deletedB: S.deletedB, catalog: S.catalog };
+  if (IDB.db) { saveQ = saveQ.then(() => IDB.setMany(snap)).then(() => TABS_BC?.postMessage('saved')).catch(() => toast('تعذّر الحفظ في قاعدة المتصفح. حمّل نسخة احتياطية الآن.', { tone:'bad' })); return true; }
   const ok = Object.entries(DATA_KEYS).every(([k, lk]) => writeJSON(lk, snap[k]));
   if (!ok) toast('تعذّر الحفظ: مساحة المتصفح ممتلئة. حمّل نسخة احتياطية الآن.', { tone:'bad' });
   return ok;
 }
+/* عدة تبويبات لكناش: كل تبويب يعيد التحميل عندما يحفظ غيره، فلا يكتب أحدهما فوق تعديلات الآخر */
+const TABS_BC = 'BroadcastChannel' in window ? new BroadcastChannel('kanach') : null;
+if (TABS_BC) TABS_BC.onmessage = async ev => {
+  if (ev.data !== 'saved' || !IDB.db) return;
+  try {
+    const e = await IDB.get('entries'); if (!Array.isArray(e)) return;
+    S.entries = e; S.budgetExp = (await IDB.get('budgetExp')) || []; S.budgets = (await IDB.get('budgets')) || {};
+    S.deleted = (await IDB.get('deleted')) || {}; S.deletedB = (await IDB.get('deletedB')) || {}; S.catalog = (await IDB.get('catalog')) || {};
+    resetSigs(); render();
+  } catch {}
+};
 let cloudHook = () => {};
 function persist() {
   const now = new Date().toISOString();
@@ -849,6 +860,7 @@ const Carrier = {
   },
   communes(wid) { return this.listAll('/communes/', { wilaya_id: wid }); },
   centers(cid) { return this.listAll('/centers/', { commune_id: cid }); },
+  centersW(wid) { return this.listAll('/centers/', { wilaya_id: wid }); },
   async test() { const j = await this.call('/parcels/', { page_size: 1 }); return { total: j.total_data ?? (Array.isArray(j.data) ? j.data.length : 0) }; },
   
   async fetchByTracking(list, onProgress) {
@@ -975,110 +987,328 @@ function applyChanges(changes, { source = 'api' } = {}) {
   return res;
 }
 
-const VONDER_BOOKMARKLET = "javascript:(async function(){ var sleep=function(ms){return new Promise(function(r){setTimeout(r,ms)})}; var num=function(t){return +(String(t).replace(/[^\\d]/g,''))||0}; var strip=function(s){return String(s).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase()}; var rows=[],refs=[]; document.querySelectorAll('tr').forEach(function(tr){ var td=tr.querySelectorAll(':scope>td'); if(td.length<5) return; var m=td[0].innerText.match(/#?(\\d{5,})/); if(!m) return; var prices=(td[1].innerText.match(/\\d[\\d\\s.,]*\\s*DZD/gi)||[]).map(num); var st=td[2].innerText.split(/\\n+/).map(function(x){return x.trim()}).filter(Boolean); var cl=td[3].innerText.split(/\\n+/).map(function(x){return x.trim()}).filter(Boolean); var ph='';cl.forEach(function(x){if(!ph&&/^0\\d{8,9}$/.test(x.replace(/\\s/g,'')))ph=x.replace(/\\s/g,'')}); var other=cl.filter(function(x){return x.replace(/\\s/g,'')!==ph}); rows.push({id:m[1],prices:prices,status:st,name:other[0]||'',phone:ph,wilaya:other[1]||'',seller:num(td[4].innerText)}); refs.push(tr); }); if(!rows.length){alert('لم أجد طلبيات في هذه الصفحة.');return} var box=document.createElement('div'); box.style.cssText='position:fixed;z-index:999999;top:12px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:10px 18px;border-radius:10px;font:14px sans-serif;direction:rtl'; document.body.appendChild(box); var findModal=function(id){var best=null;document.querySelectorAll('div,section,dialog').forEach(function(d){var t=d.innerText||'';if(t.indexOf('Informations client')>-1&&t.indexOf(id)>-1&&d.offsetParent!==null){if(!best||t.length<best.innerText.length)best=d}});return best}; var closeModal=function(m){ var node=m,x=null; for(var i=0;i<4&&node&&!x;i++){node=node.parentElement;if(!node)break; node.querySelectorAll('button,a,span,div,i').forEach(function(el){if(el.offsetParent&&/^[×xX✕✖]$/.test((el.innerText||'').trim()))x=el})} if(x)x.click();else document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',keyCode:27,bubbles:true})); }; var ok=function(r){var s=strip(r.status.join(' '));return /confirme avec le client/.test(s)&&!/annul/.test(s)}; var todo=rows.map(function(r,i){return i}).filter(function(i){return ok(rows[i])}); var failed=0; for(var k=0;k<todo.length;k++){ var i=todo[k],r=rows[i],tr=refs[i]; box.textContent='كناش: قراءة تفاصيل '+(k+1)+' / '+todo.length; var cell=tr.querySelector(':scope>td:last-child'); var btn=cell.querySelector('a,button,[onclick],i,img,svg')||cell; btn.click(); var m=null; for(var w=0;w<50&&!m;w++){await sleep(100);m=findModal(r.id)} if(!m){failed++;continue} var t=m.innerText,g=function(re){var x=t.match(re);return x?x[1].trim():''}; var d={client:g(/Client\\s*:\\s*([^\\n]+)/),phone:g(/l[eé]phone\\s*:\\s*([\\d\\s+]+)/).replace(/\\s/g,''),wilaya:g(/wilaya de\\s*:\\s*([^\\n]+)/),commune:g(/commune\\s*:\\s*([^\\n]+)/),address:g(/adresse\\s*:\\s*([^\\n]+)/),delivery:g(/Type de livraison\\s*:\\s*\\n?\\s*([^\\n]+)/),sale:num(g(/Prix de vente\\s*:\\s*\\n?\\s*([\\d\\s]+)/)),fee:num(g(/Prix de livraison\\s*:\\s*\\n?\\s*([\\d\\s]+)/)),product:'',qty:1}; var trs=m.querySelectorAll('table tr'); if(trs.length>1){var c=trs[1].querySelectorAll('td');if(c.length>1){d.product=(c[0].innerText||'').trim();d.qty=num(c[1].innerText)||1}} r.detail=d; closeModal(m);await sleep(300); if(findModal(r.id)){failed++;break} } box.remove(); var out=JSON.stringify({kanach:'vonder',v:2,rows:rows}); var done=function(){alert('كناش: تم نسخ '+rows.length+' طلبية'+(failed?' (تعذّرت قراءة تفاصيل '+failed+')':'')+'. افتح كناش > الإعدادات والصقها.')}; (navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(out).then(done):Promise.reject()).catch(function(){prompt('انسخ هذا النص (Ctrl+C) ثم الصقه في كناش:',out)}); })();";
+/* =====================================================================
+   FreeVendor ← قارئ الصفحة (bookmarklet). الموقع بلا API: نقرأ جدول «Gérer les commandes» من متصفحك
+   وأنت مسجّل الدخول، نفتح تفاصيل كل طلبية «Confirmé avec le client»، ثم نرسلها مباشرة إلى كناش
+   عبر الوسيط المحلي (أو الحافظة إن لم يكن الوسيط يعمل).
+   ===================================================================== */
+function fvReader(cfg) {
+  (async function () {
+    var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+    var num = function (t) { return +(String(t || '').replace(/[^\d]/g, '')) || 0; };
+    var strip = function (s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); };
+    var vis = function (el) { return el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden'; };
+    var lines = function (el) { return el.innerText.split(/\n+/).map(function (x) { return x.trim(); }).filter(Boolean); };
+    var rows = [], refs = [];
+    document.querySelectorAll('tr').forEach(function (tr) {
+      var td = tr.querySelectorAll(':scope>td'); if (td.length < 5) return;
+      var m = td[0].innerText.match(/#?\s*(\d{5,})/); if (!m) return;
+      var prices = (td[1].innerText.match(/\d[\d\s.,]*\s*(?:DZD|DA)/gi) || []).map(num);
+      var st = lines(td[2]), cl = lines(td[3]), ph = '';
+      cl.forEach(function (x) { var d = x.replace(/[\s.\-]/g, ''); if (!ph && /^(\+?213|0)[5-7]\d{8}$/.test(d)) ph = d; });
+      var other = cl.filter(function (x) { return x.replace(/[\s.\-]/g, '') !== ph; });
+      rows.push({ id: m[1], prices: prices, status: st, name: other[0] || '', phone: ph, wilaya: other[1] || '', seller: num(td[4].innerText) });
+      refs.push(tr);
+    });
+    if (!rows.length) { alert('كناش: لم أجد طلبيات في هذه الصفحة. افتح «Gérer les commandes».'); return; }
+    var box = document.createElement('div');
+    box.style.cssText = 'position:fixed;z-index:2147483647;top:12px;left:50%;transform:translateX(-50%);background:#12463F;color:#fff;padding:10px 18px;border-radius:12px;font:600 14px system-ui,sans-serif;direction:rtl;box-shadow:0 8px 30px rgba(0,0,0,.3)';
+    document.body.appendChild(box);
+    var findModal = function (id) {
+      var best = null;
+      document.querySelectorAll('div,section,dialog').forEach(function (d) {
+        var t = d.innerText || '';
+        if (t.indexOf(id) > -1 && vis(d) && /Informations client|Num[ée]ro de commande/.test(t) && /Prix de vente/.test(t)) { if (!best || t.length < best.innerText.length) best = d; }
+      });
+      return best;
+    };
+    var closeModal = function (m) {
+      var node = m, x = null;
+      for (var i = 0; i < 5 && node && !x; i++) {
+        node.querySelectorAll('button,a,span,div,i').forEach(function (el) { if (!x && vis(el) && /^[×xX✕✖]$/.test((el.innerText || '').trim())) x = el; });
+        node = node.parentElement;
+      }
+      if (x) x.click(); else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+    };
+    var ok = function (r) { var s = strip(r.status.join(' ')); return /confirme avec le client/.test(s) && !/annul/.test(s); };
+    var todo = rows.map(function (r, i) { return i; }).filter(function (i) { return ok(rows[i]); }), failed = 0;
+    for (var k = 0; k < todo.length; k++) {
+      var i = todo[k], r = rows[i], tr = refs[i];
+      box.textContent = 'كناش: قراءة تفاصيل ' + (k + 1) + ' / ' + todo.length;
+      var cell = tr.querySelector(':scope>td:last-child'), btn = cell.querySelector('a,button,[onclick],i,img,svg') || cell;
+      btn.click();
+      var m = null; for (var w = 0; w < 60 && !m; w++) { await sleep(100); m = findModal(r.id); }
+      if (!m) { failed++; continue; }
+      var t = m.innerText, g = function (re) { var x = t.match(re); return x ? x[1].trim() : ''; };
+      var items = [];
+      m.querySelectorAll('table tr').forEach(function (row) {
+        var c = row.querySelectorAll('td'); if (c.length < 3) return;
+        var name = (c[0].innerText || '').trim(); if (!name) return;
+        items.push({ name: name, qty: num(c[1].innerText) || 1, price: num(c[2].innerText) });
+      });
+      r.detail = {
+        client: g(/Client\s*:\s*([^\n]+)/), phone: g(/l[eé]phone\s*:\s*([\d\s+]+)/).replace(/\s/g, ''),
+        wilaya: g(/wilaya de\s*:\s*([^\n]+)/i), commune: g(/commune\s*:\s*([^\n]+)/i), address: g(/adresse\s*:\s*([^\n]+)/i),
+        notes: g(/Questions et remarques\s*:\s*([^\n]*)/i).replace(/^\/$/, ''),
+        delivery: g(/Type de livraison\s*:\s*\n?\s*([^\n]+)/i),
+        total: num(g(/Prix total de la commande\s*:\s*\n?\s*([\d\s]+)/i)), fee: num(g(/Prix de livraison\s*:\s*\n?\s*([\d\s]+)/i)),
+        sale: num(g(/Prix de vente\s*:\s*\n?\s*([\d\s]+)/i)), items: items,
+        product: items.length ? items[0].name : '', qty: items.length ? items[0].qty : 1
+      };
+      closeModal(m); await sleep(300);
+      if (findModal(r.id)) { failed++; break; }
+    }
+    var payload = { kanach: 'vonder', v: 3, at: new Date().toISOString(), rows: rows };
+    var msg = rows.length + ' طلبية (' + todo.length + ' مؤكدة)' + (failed ? ' — تعذّرت قراءة ' + failed : '');
+    try {
+      box.textContent = 'كناش: إرسال…';
+      var res = await fetch(cfg.url + '/__kanach/inbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      box.textContent = 'كناش ✓ أُرسلت ' + msg; setTimeout(function () { box.remove(); }, 4000);
+    } catch (e) {
+      // الإرسال المباشر مُنع (Chrome يطلب إذن «الشبكة المحلية»، أو الوسيط متوقف): نفتح كناش في تبويب ونسلّمه الطلبيات بـ postMessage
+      box.innerHTML = '';
+      var t1 = document.createElement('div'); t1.textContent = 'كناش: قُرئت ' + msg; t1.style.marginBottom = '8px'; box.appendChild(t1);
+      var b1 = document.createElement('button'), b2 = document.createElement('button');
+      [b1, b2].forEach(function (b) { b.style.cssText = 'font:600 14px system-ui;padding:8px 14px;border-radius:9px;border:0;margin:0 4px;cursor:pointer'; box.appendChild(b); });
+      b1.textContent = 'افتح كناش وأرسل'; b1.style.background = '#fff'; b1.style.color = '#12463F';
+      b2.textContent = 'نسخ'; b2.style.background = 'rgba(255,255,255,.15)'; b2.style.color = '#fff';
+      b1.onclick = function () {
+        var win = window.open(cfg.url + '/', 'kanach'), sent = false;
+        var onMsg = function (ev) {
+          if (ev.source !== win || !ev.data) return;
+          if (ev.data.kanachReady && !sent) { sent = true; win.postMessage(payload, '*'); }
+          if (ev.data.kanachAck) { window.removeEventListener('message', onMsg); box.textContent = 'كناش ✓ وصلت ' + msg; setTimeout(function () { box.remove(); }, 4000); }
+        };
+        window.addEventListener('message', onMsg);
+        var tries = 0, iv = setInterval(function () { if (sent || ++tries > 40) return clearInterval(iv); try { win.postMessage({ kanachPing: true }, '*'); } catch (x) {} }, 500);
+      };
+      b2.onclick = function () {
+        var out = JSON.stringify(payload);
+        (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(out).then(function () { box.textContent = 'نُسخت — الصقها في كناش ← الإعدادات ← FreeVendor'; setTimeout(function () { box.remove(); }, 5000); }) : Promise.reject())
+          .catch(function () { prompt('انسخ هذا النص والصقه في كناش:', out); });
+      };
+    }
+  })();
+}
+const kanachURL = () => SAME_ORIGIN_PROXY ? location.origin : (Carrier.base().startsWith('https://api.yalidine') ? 'http://localhost:8787' : Carrier.base());
+const fvBookmarklet = () => 'javascript:' + encodeURIComponent(`(${fvReader.toString()})(${JSON.stringify({ url: kanachURL() })})`);
+
+/* ---- كتالوج المنتجات: سعر الشراء والوزن لكل منتج (FreeVendor لا يعرض سعر شرائك) ---- */
+const prodKey = name => norm(name).replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+function catalogGet(name) { return S.catalog[prodKey(name)] || null; }
+function catalogSet(name, cost, weight) {
+  const k = prodKey(name); if (!k) return;
+  S.catalog[k] = { name: String(name).slice(0, 160), cost: num(cost), weight: num(weight), updatedAt: new Date().toISOString() };
+}
+/* يحسب تكلفة طلبية FreeVendor من الكتالوج: { cost, weight, known, missing:[أسماء] } */
+function catalogCost(items) {
+  let cost = 0, weight = 0; const missing = [];
+  (items || []).forEach(it => { const c = catalogGet(it.name); if (c && c.cost > 0) { cost += c.cost * (it.qty || 1); weight += (c.weight || 0) * (it.qty || 1); } else missing.push(it.name); });
+  return { cost, weight, known: !!(items && items.length) && !missing.length, missing };
+}
+/* تسعير طلبية FreeVendor:
+   سعر التطبيق (finalPrice) = «Prix total de la commande» • سعر الزبون (sellPrice) = سعر التطبيق + فائدة البائع
+   المبلغ المحصَّل (Prix de vente = Prix du colis عند Yalidine) = سعر الزبون + توصيل FreeVendor
+   فائدتي = سعر التطبيق − سعر الشراء × (1 + عمولة Vonder) — إن عُرف سعر الشراء من الكتالوج، وإلا الافتراضي */
+function priceFvEntry(e) {
+  const pct = num(S.settings.appFeePct) / 100, q = Math.max(1, e.quantity || 1), cc = catalogCost(e.items);
+  let gross;
+  if (cc.known) { e.totalCost = cc.cost * (1 + pct); gross = e.finalPrice - e.totalCost; e.productPrice = cc.cost / q; e.profitAssumed = false; }
+  else { gross = num(S.settings.defProfit) * q; e.totalCost = Math.max(0, e.finalPrice - gross); e.productPrice = e.totalCost / (q * (1 + pct)); e.profitAssumed = true; }
+  e.myProfit = gross / q; e.grossProfit = gross; e.buffer = 0;
+  if (e.isActualProfit && e.netClient > 0) e.amount = realProfitOf(e, e.netClient);
+  else if (e.status !== 'returned') e.amount = e.expectedProfit = expectedOf(e);
+  if (cc.weight) e.ship.weight = cc.weight;
+  return cc;
+}
 function importVonder(rows) {
-  const out = { added:0, dup:0, skipped:0, risky:0 }, now = new Date().toISOString(), myP = num(S.settings.defProfit);
+  const out = { added:0, dup:0, skipped:0, risky:0, missing: new Set(), ids: [] }, now = new Date().toISOString();
   rows.forEach(r => {
     const st = norm((r.status || []).join(' '));
     if (!/confirme avec le client/.test(st) || /annule/.test(st)) { out.skipped++; return; }
     const vid = String(r.id || ''); if (!vid) { out.skipped++; return; }
-    const dt = r.detail || null;
-    const shipOf = () => ({ wilaya: (dt?.wilaya || r.wilaya || '').trim(), communeFV: (dt?.commune || '').trim(), address: (dt?.address || '').trim(), type: /stop|relais|bureau/i.test(dt?.delivery || '') ? 'desk' : 'home',
-      product: ((dt?.product || '') + (dt && dt.qty > 1 ? ' ×' + dt.qty : '')).trim(), fvFee: num(dt?.fee) || 0, price: num(dt?.sale) || (r.prices || []).map(num).slice(-1)[0] || 0, name: (dt?.client || r.name || '').trim(), phone: String(dt?.phone || r.phone || '').trim() });
+    const dt = r.detail || null, pr = (r.prices || []).map(num), seller = num(r.seller);
+    const items = dt?.items?.length ? dt.items.map(i => ({ name: String(i.name).trim(), qty: Math.max(1, num(i.qty)), price: num(i.price) }))
+      : dt?.product ? [{ name: dt.product, qty: Math.max(1, num(dt.qty)), price: 0 }] : [];
+    // ترتيب أسعار الجدول: [مجموع المنتجات، التوصيل، المجموع، سعر البيع]
+    const fv = num(dt?.fee) || (pr.length >= 4 ? pr[1] : 0);
+    const cod = num(dt?.sale) || (pr.length >= 4 ? pr[3] : pr[pr.length - 1]) || 0;
+    const productTotal = num(dt?.total) || (pr.length >= 4 ? pr[0] : Math.max(0, cod - fv - seller));
+    const type = /stop|relais|bureau|desk|agence/i.test(dt?.delivery || '') ? 'desk' : 'home';
+    const name = (dt?.client || r.name || '').trim(), phone = normPhone(dt?.phone || r.phone || '');
+    const ship = { wilaya: (dt?.wilaya || r.wilaya || '').trim(), communeFV: (dt?.commune || '').trim(), address: (dt?.address || '').trim(), type,
+      product: items.map(i => i.name + (i.qty > 1 ? ' ×' + i.qty : '')).join(' + ').slice(0, 200), price: cod, fvFee: fv, notes: (dt?.notes || '').trim(), name, phone };
     const ex = S.entries.find(e => e.vonderId === vid);
-    if (ex && dt && !ex.tracking && !ex.yalidinePushedAt) ex.ship = shipOf();
-    if (ex) { out.dup++; if (ex.status === 'pending' && num(r.seller) > 0 && num(r.seller) !== num(ex.sellerProfit)) { ex.sellerProfit = ex.totalSellerProfit = num(r.seller); } return; }
-    const pr = (r.prices || []).map(num), seller = num(r.seller);
-    const client = pr.length >= 4 ? pr[3] : (pr[pr.length - 1] || 0);
-    const finalPrice = Math.max(0, client - seller), totalCost = Math.max(0, finalPrice - myP);
-    const name = (r.name || '').trim(), phone = String(r.phone || '').trim();
-    S.entries.unshift({ id: uid(), date: iso(), type:'vonder', desc: `${name} ${phone}`.trim() || ('Vonder #' + vid), tracking:'', product:'', status:'pending', timestamp: now,
-      vonderId: vid, fromVonder: true, profitAssumed: true, ship: shipOf(),
-      amount: myP, productPrice: pr[0] || 0, quantity: 1, myProfit: myP, sellerProfit: seller, totalSellerProfit: seller, extraFee: 0,
-      totalCost, finalPrice, sellPrice: client, netClient: 0, expectedProfit: myP, isActualProfit: false, netSource:'', sonaBuyPrice:0, sonaSellPrice:0, sonaQuantity:1,
-      yalidineInfo: { clientName: name, phone, wilaya: r.wilaya || '', commune:'' } });
-    if (dt?.product) S.entries[0].product = String(dt.product).slice(0, 80);
-    const ne = S.entries[0]; ne.grossProfit = myP; ne.buffer = 0; ne.amount = ne.expectedProfit = expectedOf(ne);
+    if (ex) {
+      out.dup++;
+      if (!ex.tracking && !ex.yalidinePushedAt && ex.status === 'pending') {
+        if (dt) { ex.ship = { ...ex.ship, ...ship }; if (items.length) ex.items = items; }
+        if (seller > 0) ex.sellerProfit = ex.totalSellerProfit = seller;
+        if (productTotal) { ex.finalPrice = productTotal; ex.sellPrice = productTotal + (ex.sellerProfit || 0); }
+        ex.fvSplit = true; priceFvEntry(ex);
+      }
+      return;
+    }
+    const q = items.reduce((a, i) => a + i.qty, 0) || 1;
+    const e = { id: uid(), date: iso(), type:'vonder', desc: `${name} ${phone}`.trim() || ('FreeVendor #' + vid), tracking:'', product: ship.product.slice(0, 80), status:'pending', timestamp: now,
+      vonderId: vid, fromVonder: true, fvSplit: true, items, ship, quantity: q, sellerProfit: seller, totalSellerProfit: seller, extraFee: 0,
+      finalPrice: productTotal, sellPrice: productTotal + seller, netClient: 0, isActualProfit: false, netSource:'', sonaBuyPrice:0, sonaSellPrice:0, sonaQuantity:1,
+      yalidineInfo: { clientName: name, phone, wilaya: ship.wilaya, commune: ship.communeFV } };
+    const cc = priceFvEntry(e);
+    cc.missing.forEach(n => out.missing.add(n));
+    S.entries.unshift(e); out.ids.push(e.id);
     if (riskyCustomer(phone)) out.risky++;
     out.added++;
   });
   return out;
 }
+/* ترحيل v6: الطلبيات المستوردة سابقاً كانت تعدّ «سعر البيع» (الذي يشمل توصيل FreeVendor) سعراً للزبون */
+function migrateV6() {
+  if (num(S.settings.v) >= 6) return null;
+  const log = []; let delta = 0;
+  S.entries.forEach(e => {
+    if (!e.fromVonder || e.fvSplit || e.type !== 'vonder') return;
+    const t = e.ship?.type || 'home', w = wilayaOfEntry(e), fv = num(e.ship?.fvFee) || (w ? fvFeeFor(w, t) || 0 : 0);
+    e.fvSplit = true; if (!fv) return;
+    const old = { sellPrice: e.sellPrice, finalPrice: e.finalPrice, totalCost: e.totalCost, amount: e.amount };
+    if (e.ship) { e.ship.price = e.ship.price || e.sellPrice; e.ship.fvFee = fv; }
+    e.sellPrice -= fv; e.finalPrice -= fv; e.totalCost = Math.max(0, num(e.totalCost) - fv);
+    if (e.isActualProfit && e.netClient > 0) e.amount = realProfitOf(e, e.netClient);
+    else if (e.status !== 'returned') e.amount = e.expectedProfit = expectedOf(e);
+    log.push([e.id, old]); delta += e.amount - old.amount;
+  });
+  S.settings.v = 6; saveSettings();
+  if (log.length) { writeJSON('kanach_mig6', { ts: new Date().toISOString(), n: log.length, delta: Math.round(delta), log }); persist(); }
+  return { n: log.length, delta: Math.round(delta) };
+}
 
 /* =====================================================================
    رفع الطلبيات المؤكدة إلى Yalidine (إنشاء طرود)
+   Prix du colis = «Prix de vente» من FreeVendor (يشمل توصيل FreeVendor) و«Livraison gratuite» مفعّلة:
+   الزبون يدفع المبلغ نفسه الذي رآه في FreeVendor، وYalidine يقتطع رسومه منه.
    ===================================================================== */
 const readyToPush = () => S.entries.filter(e => isOrder(e) && e.fromVonder && e.status === 'pending' && !cleanTrack(e.tracking) && !e.yalidinePushedAt);
 function ensureShip(e) {
   if (e.ship) return e.ship;
   const y = e.yalidineInfo || {};
-  e.ship = { wilaya: y.wilaya || '', communeFV: y.commune || '', address: '', type: 'home', product: e.product || '', price: e.sellPrice || 0, name: y.clientName || e.desc.replace(/0\d{9}/, '').trim(), phone: y.phone || ((e.desc || '').match(/0\d{9}/) || [''])[0] };
+  e.ship = { wilaya: y.wilaya || '', communeFV: y.commune || '', address: '', type: S.settings.defShip, product: e.product || '', price: (e.sellPrice || 0) + (e.ship?.fvFee || 0), name: y.clientName || e.desc.replace(/0\d{9}/, '').trim(), phone: y.phone || ((e.desc || '').match(/0\d{9}/) || [''])[0] };
   return e.ship;
 }
 let PUSH = null;
 const splitName = full => { const t = String(full || '').replace(/[.]/g, ' ').trim().split(/\s+/).filter(Boolean); if (!t.length) return ['-', '-']; if (t.length === 1) return [t[0], t[0]]; return [t[0], t.slice(1).join(' ')]; };
-const normPhone = p => { let d = String(p || '').replace(/\D/g, ''); if (d.startsWith('213')) d = '0' + d.slice(3); if (d.length === 9) d = '0' + d; return d; };
+const normPhone = p => { let d = String(p || '').replace(/\D/g, ''); if (d.startsWith('00213')) d = d.slice(2); if (d.startsWith('213')) d = '0' + d.slice(3); if (d.length === 9) d = '0' + d; return d; };
+const phoneOK = p => /^0[5-7]\d{8}$/.test(normPhone(p));
+const AUTO_SCORE = 0.95;
 
+/* أفضل بلدية: نجرّب نص البلدية من FreeVendor ثم العنوان (كثيراً ما يكتب الزبون الحي في خانة البلدية) */
+function bestCommune(r) {
+  const sh = r.e.ship, tries = [sh.communeFV, sh.address, `${sh.communeFV} ${sh.address}`].filter(Boolean);
+  let best = null;
+  tries.forEach(t => { const top = rankNames(t, r.communes, c => c.name)[0]; if (top && (!best || top.score > best.score)) best = top; });
+  // لا تطابق؟ اقترح بلدية مقرّ الولاية (تحمل اسمها غالباً) — تخمين لا يُرسَل تلقائياً
+  if ((!best || best.score < 0.7) && r.wil) { const hq = r.communes.find(c => norm(c.name) === norm(r.wil.name)); if (hq) best = { item: hq, score: 0.6 }; }
+  r.rank = rankNames(sh.communeFV || sh.address || '', r.communes, c => c.name);
+  r.cIdx = best ? r.communes.indexOf(best.item) : -1; r.sugg = best ? best.score : 0;
+}
+/* لتوصيل المكتب: مكاتب الولاية كلها؛ نختار ما يطابق البلدية/العنوان، أو المكتب الوحيد */
+function bestCenter(r) {
+  const sh = r.e.ship; r.centerId = '';
+  if (!r.centers.length) return;
+  if (r.centers.length === 1) { r.centerId = String(r.centers[0].center_id); r.centerSure = true; return; }
+  const txt = `${sh.communeFV} ${sh.address}`, top = rankNames(txt, r.centers, c => `${c.commune_name || ''} ${c.name || ''}`)[0];
+  const byCommune = r.cIdx >= 0 && r.centers.filter(c => String(c.commune_id) === String(r.communes[r.cIdx]?.id));
+  if (byCommune && byCommune.length === 1) { r.centerId = String(byCommune[0].center_id); r.centerSure = r.sugg >= AUTO_SCORE; return; }
+  if (top && top.score >= 0.8) { r.centerId = String(top.item.center_id); r.centerSure = top.score >= AUTO_SCORE; }
+}
+function pushBlockers(r) {
+  const e = r.e, sh = e.ship, why = [];
+  if (!r.wil) why.push('الولاية غير معروفة');
+  if (r.type === 'desk') { if (!r.centerId) why.push('اختر المكتب'); else if (!r.centerSure) why.push('تأكد من المكتب'); }
+  else if (r.cIdx < 0) why.push('اختر البلدية'); else if (r.sugg < AUTO_SCORE) why.push('البلدية تخمين — تأكد منها');
+  if (r.type !== 'desk' && r.communes[r.cIdx]?.is_deliverable === false) why.push('البلدية غير مخدومة للتوصيل للمنزل');
+  if (!phoneOK(sh.phone)) why.push('رقم الهاتف غير صالح');
+  if (!(sh.price > 0) || sh.price > 150000) why.push('المبلغ خارج حدود Yalidine (1 – 150 000)');
+  if (riskyCustomer(sh.phone)) why.push('زبون له مرتجعات');
+  return why;
+}
+async function prepareRow(r) {
+  r.err = '';
+  if (!r.wil) return;
+  r.communes = await Carrier.communes(r.wil.id); await sleep(150);
+  bestCommune(r);
+  if (r.type === 'desk') { r.centers = await Carrier.centersW(r.wil.id); bestCenter(r); if (r.centerId) { const c = r.centers.find(x => String(x.center_id) === r.centerId); const ci = r.communes.findIndex(x => String(x.id) === String(c?.commune_id)); if (ci >= 0) r.cIdx = ci; } }
+}
+async function preparePush(list) {
+  const wil = await Carrier.wilayas();
+  const rows = [];
+  for (const e of list) {
+    ensureShip(e);
+    const wid = wilayaIdOf(e.ship.wilaya), rk = rankNames(e.ship.wilaya, wil, w => w.name)[0];
+    const r = { e, on:false, wilList: wil, wil: wil.find(w => +w.id === wid) || (rk && rk.score >= 0.6 ? rk.item : null), communes:[], cIdx:-1, sugg:0, type: e.ship.type || S.settings.defShip,
+      centers:[], centerId:'', centerSure:false, addr: e.ship.address || '', err:'' };
+    try { await prepareRow(r); } catch (err) { r.err = err.message; }
+    r.why = pushBlockers(r); r.on = !r.why.length;
+    rows.push(r);
+  }
+  return rows;
+}
 async function openPush() {
   if (!Carrier.configured()) { toast('اربط Yalidine أولاً.', { tone:'bad' }); return; }
   const list = readyToPush(); if (!list.length) { toast('لا توجد طلبيات جاهزة للرفع.'); return; }
   try { await Carrier.checkProxy(); } catch (err) { Sheet.open({ title:'رفع إلى Yalidine', body:`<div class="note bad">${ic('alert', 18)}<div>${esc(err.message)}</div></div>`, footer:'' }); return; }
-  list.forEach(ensureShip);
-  PUSH = { busy:true, rows: list.map(e => ({ e, on:false, wil:null, communes:[], cIdx:-1, sugg:0, type: e.ship.type, centers:[], centerId:'', addr: e.ship.address || '', err:'' })), msg:'' };
-  Sheet.open({ title:'رفع إلى Yalidine', body:'<div class="sub" style="padding:18px">جارٍ تحميل الولايات والبلديات من Yalidine…</div>', footer:'', onClose: () => { PUSH = null; } });
-  try {
-    const wil = await Carrier.wilayas();
-    for (const r of PUSH.rows) {
-      const wtxt = r.e.ship.wilaya, rk = rankNames(wtxt, wil, w => w.name);
-      r.wil = rk[0] && rk[0].score >= 0.6 ? rk[0].item : null; r.wilList = wil;
-      if (r.wil) { r.communes = await Carrier.communes(r.wil.id); await sleep(200); r.rank = rankNames(r.e.ship.communeFV, r.communes, c => c.name);
-        const top = r.rank[0]; r.sugg = top ? top.score : 0; if (top && top.score >= 0.7) { r.cIdx = r.communes.indexOf(top.item); r.on = top.score >= 1 && !(r.type === 'desk'); } }
-    }
-    PUSH.busy = false; renderPush();
-  } catch (err) { PUSH && (PUSH.busy = false); Sheet.open({ title:'رفع إلى Yalidine', body:`<div class="note bad">${ic('alert', 18)}<div>${esc(err.message)}</div></div>`, footer:'' }); }
+  PUSH = { busy:true, rows:[], msg:'' };
+  Sheet.open({ title:'رفع إلى Yalidine', body:`<div class="sub" style="padding:18px">جارٍ مطابقة ${list.length} طلبية مع ولايات وبلديات ومكاتب Yalidine…</div>`, footer:'', onClose: () => { PUSH = null; } });
+  try { const rows = await preparePush(list); if (!PUSH) return; PUSH.rows = rows; PUSH.busy = false; renderPush(); }
+  catch (err) { PUSH && (PUSH.busy = false); Sheet.open({ title:'رفع إلى Yalidine', body:`<div class="note bad">${ic('alert', 18)}<div>${esc(err.message)}</div></div>`, footer:'' }); }
 }
 function pushRowHTML(r, i) {
-  const e = r.e, sh = e.ship, c = r.communes[r.cIdx];
+  const e = r.e, sh = e.ship, desk = r.type === 'desk', wid = r.wil ? +r.wil.id : 0;
+  const d = deliveryCost({ wid, type: r.type, sellPrice: e.sellPrice, fvFee: sh.fvFee });
   const opts = r.communes.length ? (r.rank ? r.rank.map(x => x.item) : r.communes) : [];
-  const fee = feeFor(r.wil?.id, r.type), desk = r.type === 'desk';
-  const rc = riskyCustomer(sh.phone);
-  const flag = r.cIdx < 0 ? `<span class="neg">اختر البلدية</span>` : (r.sugg >= 0.99 ? '' : `<span style="color:#b7791f">تخمين — تأكد من البلدية</span>`);
-  return `<div class="card pad-s" style="margin-bottom:10px;${r.on ? '' : 'opacity:.92'}">
-    <label class="sw" style="gap:10px"><input type="checkbox" data-pf="on" data-i="${i}" ${r.on ? 'checked' : ''} ${r.cIdx < 0 || (desk && !r.centerId) ? 'disabled' : ''}><div class="tx"><b>${esc(sh.name || e.desc)}</b><span class="ltr">${esc(sh.phone)} • #${esc(e.vonderId)}</span></div><b class="n">${fmtNum(sh.price)} دج</b></label>
-    <div class="sub" style="margin:4px 0">${esc(sh.product || '—')}</div>
+  const rc = riskyCustomer(sh.phone), why = r.why || [];
+  return `<div class="card pad-s" style="margin-bottom:10px;${why.length ? 'border-color:color-mix(in srgb,var(--wait) 45%,var(--line))' : ''}">
+    <label class="sw" style="gap:10px"><input type="checkbox" data-pf="on" data-i="${i}" ${r.on ? 'checked' : ''} ${!r.wil || (desk ? !r.centerId : r.cIdx < 0) ? 'disabled' : ''}><div class="tx"><b>${esc(sh.name || e.desc)}</b><span class="n">${esc(sh.phone)} • #${esc(e.vonderId)}</span></div><b class="n">${fmtNum(sh.price)} دج</b></label>
+    <div class="sub" style="margin:4px 0">${esc(sh.product || '—')}${sh.notes ? ` • <span class="wait">ملاحظة: ${esc(sh.notes)}</span>` : ''}</div>
+    ${why.length ? `<div class="row wrap-r" style="gap:6px;margin:6px 0">${why.map(w => `<span class="badge wait">${esc(w)}</span>`).join('')}</div>` : `<div class="row" style="margin:6px 0"><span class="badge pos">${ic('check', 12)}جاهزة للإرسال</span></div>`}
     ${rc ? `<div class="note bad" style="margin:6px 0">${ic('alert', 18)}<div>زبون <b>${rc.r.t}</b>: ${rc.c.returned} مرتجع من ${rc.c.orders} طلبية. أكّد معه بالهاتف قبل الإرسال.</div></div>` : ''}
     <div class="two"><label class="field"><span>الولاية ${sh.wilaya ? '(' + esc(sh.wilaya) + ')' : ''}</span><select data-pf="wil" data-i="${i}"><option value="">— اختر —</option>${(r.wilList || []).map(w => `<option value="${esc(w.id)}" ${r.wil && String(r.wil.id) === String(w.id) ? 'selected' : ''}>${esc(w.id)} — ${esc(w.name)}</option>`).join('')}</select></label>
     <label class="field"><span>نوع التوصيل</span><select data-pf="type" data-i="${i}"><option value="home" ${!desk ? 'selected' : ''}>للمنزل</option><option value="desk" ${desk ? 'selected' : ''}>مكتب (Stop desk)</option></select></label></div>
-    <label class="field"><span>البلدية عند Yalidine ${sh.communeFV ? `— عند البائع: «${esc(sh.communeFV)}»` : ''} ${flag}</span><select data-pf="commune" data-i="${i}"><option value="-1">— اختر —</option>${opts.map(x => `<option value="${r.communes.indexOf(x)}" ${r.communes.indexOf(x) === r.cIdx ? 'selected' : ''}>${esc(x.name)}${x.is_deliverable === false ? ' (غير مخدومة)' : ''}</option>`).join('')}</select></label>
-    ${desk ? `<label class="field"><span>المكتب</span><select data-pf="center" data-i="${i}"><option value="">— اختر —</option>${r.centers.map(x => `<option value="${esc(x.center_id)}" ${String(x.center_id) === String(r.centerId) ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>` : ''}
+    ${desk ? `<label class="field"><span>المكتب ${r.centers.length ? `(${r.centers.length} في الولاية)` : ''}</span><select data-pf="center" data-i="${i}"><option value="">— اختر —</option>${r.centers.map(x => `<option value="${esc(x.center_id)}" ${String(x.center_id) === String(r.centerId) ? 'selected' : ''}>${esc(x.name)}${x.commune_name ? ' — ' + esc(x.commune_name) : ''}</option>`).join('')}</select>${r.wil && !r.centers.length ? '<small class="neg">لا يوجد مكتب Yalidine في هذه الولاية — اختر التوصيل للمنزل.</small>' : ''}</label>`
+      : `<label class="field"><span>البلدية عند Yalidine ${sh.communeFV ? `— كتب الزبون: «${esc(sh.communeFV)}»` : ''}</span><select data-pf="commune" data-i="${i}"><option value="-1">— اختر —</option>${opts.map(x => `<option value="${r.communes.indexOf(x)}" ${r.communes.indexOf(x) === r.cIdx ? 'selected' : ''}>${esc(x.name)}${x.is_deliverable === false ? ' (غير مخدومة)' : ''}</option>`).join('')}</select></label>`}
     <label class="field"><span>العنوان</span><input data-pf="addr" data-i="${i}" value="${esc(r.addr)}"></label>
-    <div class="sub">رسوم Yalidine المتوقعة: <b>${fee ? fmtNum(fee) + ' دج' : '—'}</b>${c && c.has_stop_desk === false && desk ? ' • لا مكتب في هذه البلدية' : ''}</div>
+    <div class="sub">يدفع الزبون <b>${fmtNum(sh.price)}</b> (Livraison gratuite) • يقتطع Yalidine <b>${fmtNum(d.yal)}</b> + ${fmtNum(d.cod)} • ${e.profitAssumed ? '<span class="wait">سعر الشراء غير معروف</span>' : `فائدتك ≈ <b class="${e.amount >= 0 ? 'pos' : 'neg'}">${fmtNum(e.amount)}</b>`}</div>
     ${r.err ? `<div class="note bad" style="margin-top:6px">${ic('alert', 18)}<div>${esc(r.err)}</div></div>` : ''}</div>`;
 }
 function renderPush() {
   if (!PUSH) return; const sc = $('#sheetBody')?.scrollTop || 0;
-  const n = PUSH.rows.filter(r => r.on).length;
-  const firstErr = PUSH.rows.find(r => r.err)?.err;
-  Sheet.open({ title:'رفع إلى Yalidine', body: `${firstErr ? `<div class="note bad" style="margin-bottom:10px">${ic('alert', 18)}<div><b>فشل الإرسال:</b> ${esc(firstErr)}</div></div>` : ''}<div class="note warn" style="margin-bottom:10px">${ic('alert', 18)}<div>تحقق من كل بلدية بعينك قبل الإرسال — إنشاء الطرد يُسجَّل فعلياً عند Yalidine. الطلبيات ذات البلدية غير المؤكدة لا تُحدَّد تلقائياً.</div></div>${PUSH.rows.map(pushRowHTML).join('')}${PUSH.msg ? `<div class="note" style="margin-top:8px">${esc(PUSH.msg)}</div>` : ''}`,
+  const n = PUSH.rows.filter(r => r.on).length, ready = PUSH.rows.filter(r => !r.why?.length).length;
+  Sheet.open({ title:'رفع إلى Yalidine', body: `<div class="note warn" style="margin-bottom:10px">${ic('alert', 18)}<div><b>${ready}</b> من ${PUSH.rows.length} مطابقة بثقة. البقية تحتاج عينك (البلدية أو المكتب). إنشاء الطرد يُسجَّل فعلياً عند Yalidine.</div></div>${PUSH.rows.map(pushRowHTML).join('')}${PUSH.msg ? `<div class="note" style="margin-top:8px">${esc(PUSH.msg)}</div>` : ''}`,
     footer: `<button class="btn grow" data-act="push-send" ${n && !PUSH.sending ? '' : 'disabled'}>${PUSH.sending ? 'جارٍ الإرسال…' : `إرسال ${n} طرد إلى Yalidine`}</button>`, onClose: () => { PUSH = null; } });
   const nb = $('#sheetBody'); if (nb) nb.scrollTop = sc;
 }
 async function pushChange(el) {
   if (!PUSH) return; const i = +el.dataset.i, r = PUSH.rows[i], f = el.dataset.pf;
-  if (f === 'on') r.on = el.checked;
-  else if (f === 'addr') { r.addr = el.value; return; }
-  else if (f === 'wil') { r.wil = (r.wilList || []).find(w => String(w.id) === el.value) || null; r.communes = []; r.rank = null; r.cIdx = -1; r.on = false; r.centers = []; r.centerId = '';
-    if (r.wil) { try { r.communes = await Carrier.communes(r.wil.id); r.rank = rankNames(r.e.ship.communeFV, r.communes, c => c.name); const top = r.rank[0]; r.sugg = top ? top.score : 0; if (top && top.score >= 0.7) r.cIdx = r.communes.indexOf(top.item); } catch (e) { r.err = e.message; } } }
-  else if (f === 'commune') { r.cIdx = +el.value; r.on = r.cIdx >= 0 && !(r.type === 'desk' && !r.centerId); r.sugg = r.cIdx >= 0 ? 1 : 0; r.centers = []; r.centerId = ''; if (r.type === 'desk' && r.cIdx >= 0) { try { r.centers = await Carrier.centers(r.communes[r.cIdx].id); } catch (e) { r.err = e.message; } } }
-  else if (f === 'type') { r.type = el.value; r.on = false; if (r.type === 'desk' && r.cIdx >= 0) { try { r.centers = await Carrier.centers(r.communes[r.cIdx].id); } catch (e) { r.err = e.message; } } }
-  else if (f === 'center') { r.centerId = el.value; r.on = !!el.value && r.cIdx >= 0; }
+  if (f === 'on') { r.on = el.checked; renderPush(); return; }
+  if (f === 'addr') { r.addr = el.value; return; }
+  try {
+    if (f === 'wil') { r.wil = (r.wilList || []).find(w => String(w.id) === el.value) || null; r.centers = []; r.communes = []; r.cIdx = -1; await prepareRow(r); }
+    else if (f === 'commune') { r.cIdx = +el.value; r.sugg = r.cIdx >= 0 ? 1 : 0; }
+    else if (f === 'type') { r.type = el.value; if (r.type === 'desk' && r.wil) { r.centers = await Carrier.centersW(r.wil.id); bestCenter(r); } }
+    else if (f === 'center') { r.centerId = el.value; r.centerSure = !!el.value; const c = r.centers.find(x => String(x.center_id) === r.centerId), ci = r.communes.findIndex(x => String(x.id) === String(c?.commune_id)); if (ci >= 0) { r.cIdx = ci; r.sugg = 1; } }
+  } catch (err) { r.err = err.message; }
+  r.why = pushBlockers(r); r.on = !r.why.length;
   renderPush();
 }
 function buildParcel(r) {
-  const e = r.e, sh = e.ship, [fn, ln] = splitName(sh.name || e.desc), c = r.communes[r.cIdx];
-  const o = { order_id: e.vonderId, from_wilaya_name: S.settings.originWilaya || 'Oran', firstname: fn, familyname: ln, contact_phone: normPhone(sh.phone), address: (r.addr || c.name).slice(0, 250),
-    to_commune_name: c.name, to_wilaya_name: r.wil.name, product_list: (sh.product || 'Produit').slice(0, 200), price: Math.round(sh.price), do_insurance: false, declared_value: Math.round(sh.price), freeshipping: false, is_stopdesk: r.type === 'desk', has_exchange: false };
-  if (r.type === 'desk') { o.stopdesk_id = Number(r.centerId) || r.centerId; }
+  const e = r.e, sh = e.ship, [fn, ln] = splitName(sh.name || e.desc), c = r.communes[r.cIdx], center = r.centers.find(x => String(x.center_id) === String(r.centerId));
+  const commune = r.type === 'desk' && center?.commune_name ? center.commune_name : c?.name;
+  const price = Math.round(sh.price);
+  const o = { order_id: e.vonderId, from_wilaya_name: S.settings.originWilaya || 'Oran', firstname: fn, familyname: ln, contact_phone: normPhone(sh.phone),
+    address: (r.addr || commune || '').slice(0, 250), to_commune_name: commune, to_wilaya_name: r.wil.name, product_list: (sh.product || 'Produit').slice(0, 200),
+    price, do_insurance: false, declared_value: Math.min(price, 150000), length: 0, width: 0, height: 0, weight: Math.max(0, Math.round(num(sh.weight) || num(S.settings.defWeight))),
+    freeshipping: S.settings.fvFreeShipping !== false, is_stopdesk: r.type === 'desk', has_exchange: false };
+  if (r.type === 'desk') o.stopdesk_id = Number(r.centerId) || r.centerId;
   return o;
 }
 function findResult(res, id) {
@@ -1090,11 +1320,8 @@ function findResult(res, id) {
 async function reconcileByOrderId(id) {
   try { const j = await Carrier.call('/parcels/', { order_id: id, page_size: 5 }); const p = (j.data || []).find(x => String(x.order_id) === String(id)); return p ? cleanTrack(p.tracking) : ''; } catch { return ''; }
 }
-async function pushSend() {
-  if (!PUSH || PUSH.sending) return;
-  const rows = PUSH.rows.filter(r => r.on && r.cIdx >= 0); if (!rows.length) return;
-  if (!confirm(`سيتم إنشاء ${rows.length} طرد حقيقي عند Yalidine. متأكد؟`)) return;
-  PUSH.sending = true; PUSH.msg = ''; renderPush();
+/* يرسل الصفوف ويحفظ أرقام التتبع — يُستعمل من النافذة ومن الرفع التلقائي */
+async function sendParcels(rows) {
   const ok = [], bad = [];
   for (const group of chunk(rows, 10)) {
     let res = null, netErr = null;
@@ -1106,18 +1333,93 @@ async function pushSend() {
       else if (netErr && !['auth', 'blocked', 'rate'].includes(netErr.kind) && !(netErr.kind === 'http' && netErr.status < 500)) { tr = await reconcileByOrderId(r.e.vonderId); if (!tr) msg = 'لم يصل ردّ مؤكد: ' + netErr.message + ' — تحقق من Yalidine قبل إعادة المحاولة.'; }
       else if (netErr) msg = netErr.message;
       else if (res && !tr) msg = 'ردّ غير متوقع: ' + JSON.stringify(res).slice(0, 160);
-      if (tr) { r.e.tracking = tr; r.e.yalidinePushedAt = new Date().toISOString(); r.e.ship.type = r.type; r.on = false; ok.push(r); }
+      if (tr) { r.e.tracking = tr; r.e.yalidinePushedAt = new Date().toISOString(); r.e.ship.type = r.type; r.e.ship.yalCommune = buildParcel(r).to_commune_name; r.on = false; ok.push(r); }
       else { r.err = msg || 'فشل غير معروف'; bad.push(r); }
     }
     await sleep(400);
   }
-  PUSH.sending = false;
   if (ok.length) { commit(); pingUpdate('كناش — Yalidine', `${ok.length} طرد أُنشئ`); }
+  return { ok, bad };
+}
+async function pushSend() {
+  if (!PUSH || PUSH.sending) return;
+  const rows = PUSH.rows.filter(r => r.on && r.wil && (r.type === 'desk' ? r.centerId : r.cIdx >= 0)); if (!rows.length) return;
+  const sum_ = rows.reduce((a, r) => a + r.e.ship.price, 0);
+  const a = await ask({ title: `إنشاء ${rows.length} طرد عند Yalidine؟`, body: `مجموع ما سيُحصَّل من الزبائن: ${moneyT(sum_)}\nLivraison gratuite: ${S.settings.fvFreeShipping !== false ? 'نعم (التوصيل مشمول في السعر)' : 'لا'}`, ok: 'إنشاء الطرود' });
+  if (!a.ok || !PUSH) return;
+  PUSH.sending = true; PUSH.msg = ''; renderPush();
+  const { ok, bad } = await sendParcels(rows);
+  if (!PUSH) return;
+  PUSH.sending = false;
   PUSH.rows = PUSH.rows.filter(r => !ok.includes(r));
   PUSH.msg = `${ok.length} طرد أُنشئ بنجاح${bad.length ? ` • ${bad.length} فشل (الأسباب تحت كل طلبية)` : ''}`;
   if (!PUSH.rows.length) { Sheet.close(); toast(`تم إنشاء ${ok.length} طرد عند Yalidine وحُفظت أرقام التتبع.`); return; }
   renderPush();
 }
+/* الرفع التلقائي: يُرسل فقط الطلبيات المطابقة بثقة كاملة؛ البقية تنتظر مراجعتك */
+let AUTO_PUSHING = false;
+async function autoPush() {
+  if (AUTO_PUSHING || !S.settings.autoPush || !Carrier.configured()) return null;
+  const list = readyToPush(); if (!list.length) return null;
+  AUTO_PUSHING = true;
+  try {
+    await Carrier.checkProxy();
+    const rows = await preparePush(list), go_ = rows.filter(r => !r.why.length);
+    const { ok, bad } = go_.length ? await sendParcels(go_) : { ok: [], bad: [] };
+    const wait = rows.length - ok.length;
+    S.carrier.log = [{ ts: new Date().toISOString(), auto: true, pushed: ok.length, failed: bad.length, waiting: wait }, ...(S.carrier.log || [])].slice(0, 20); saveCarrier();
+    if (ok.length || wait) toast(`Yalidine: ${ok.length} طرد أُنشئ تلقائياً${wait ? ` • ${wait} تنتظر مراجعتك` : ''}`, wait ? { action: { label: 'مراجعة', fn: () => openPush() } } : {});
+    return { ok: ok.length, wait };
+  } catch (err) { toast('الرفع التلقائي: ' + err.message, { tone: 'bad' }); return null; }
+  finally { AUTO_PUSHING = false; }
+}
+
+/* ---- صندوق الوارد: الوسيط المحلي يستقبل ما يرسله قارئ FreeVendor ---- */
+let inboxTimer = null;
+async function pollInbox() {
+  if (!(SAME_ORIGIN_PROXY || (S.carrier.proxy || '').trim())) return;
+  const after = localStorage.getItem('kanach_inbox_after') || '';
+  let j; try { const r = await fetch(`${kanachURL()}/__kanach/inbox?after=${encodeURIComponent(after)}`, { cache: 'no-store' }); if (!r.ok) return; j = await r.json(); } catch { return; }
+  const items = (j.items || []).filter(x => x.id > after);
+  if (!items.length) return;
+  for (const it of items) { localStorage.setItem('kanach_inbox_after', it.id); receiveFv(it.payload || { rows: [] }); }
+}
+/* استلام مباشر من تبويب FreeVendor (عند منع الوصول للشبكة المحلية) */
+const FV_ORIGIN_RE = /^https:\/\/([a-z0-9-]+\.)*freevendor\.space$/i;
+window.addEventListener('message', ev => {
+  if (!FV_ORIGIN_RE.test(ev.origin) || !ev.data) return;
+  if (ev.data.kanachPing) { ev.source?.postMessage({ kanachReady: true }, ev.origin); return; }
+  if (ev.data.kanach !== 'vonder' || !Array.isArray(ev.data.rows)) return;
+  const wait = () => S.settings.v ? receiveFv(ev.data, ev) : setTimeout(wait, 200);
+  wait();
+});
+function receiveFv(payload, ev) {
+  const res = importVonder(payload.rows); commit();
+  ev?.source?.postMessage({ kanachAck: true, added: res.added }, ev.origin);
+  toast(`FreeVendor: ${res.added} جديدة • ${res.dup} موجودة${res.risky ? ` • ⚠ ${res.risky} من زبائن لهم مرتجعات` : ''}${res.missing.size ? ` • ${res.missing.size} منتج بلا سعر شراء` : ''}`,
+    res.missing.size ? { action: { label: 'أكمل الأسعار', fn: () => openCatalog([...res.missing]) } } : {});
+  if (res.added) pingUpdate('كناش — FreeVendor', `${res.added} طلبية جديدة`);
+  if (S.settings.autoPush) autoPush();
+  return res;
+}
+if (window.opener) try { window.opener.postMessage({ kanachReady: true }, '*'); } catch {}
+function scheduleInbox() { clearInterval(inboxTimer); inboxTimer = setInterval(() => { if (document.visibilityState === 'visible') pollInbox(); }, 10000); pollInbox(); }
+
+/* ---- نافذة الكتالوج: سعر الشراء والوزن لكل منتج ---- */
+function openCatalog(focus = []) {
+  const names = new Set(focus);
+  S.entries.forEach(e => (e.items || []).forEach(i => names.add(i.name)));
+  Object.values(S.catalog).forEach(c => names.add(c.name));
+  const list = [...names].filter(Boolean).sort((a, b) => (focus.includes(b) - focus.includes(a)) || (!!catalogGet(a)?.cost - !!catalogGet(b)?.cost));
+  const body = list.length ? `<div class="sub" style="margin:2px 2px 10px">FreeVendor لا يعرض سعر شرائك، فتُقدَّر فائدتك بالقيمة الافتراضية. أدخل سعر الشراء للقطعة مرة واحدة لكل منتج — تُحسب الفائدة الحقيقية لكل طلبياته الآن ولاحقاً.</div>
+    <div class="card list">${list.map((n, i) => { const c = catalogGet(n) || {}; return `<div class="pad-s"><b style="font-size:13.5px;display:block;margin-bottom:6px">${esc(n)}</b>
+      <div class="two"><label class="field" style="margin:0"><span>سعر الشراء / قطعة</span><input type="number" inputmode="decimal" data-cat="cost" data-i="${i}" value="${c.cost || ''}" placeholder="${focus.includes(n) ? 'مطلوب' : ''}"></label>
+      <label class="field" style="margin:0"><span>الوزن (كغ)</span><input type="number" inputmode="decimal" step="0.1" data-cat="weight" data-i="${i}" value="${c.weight || ''}" placeholder="${num(S.settings.defWeight)}"></label></div></div>`; }).join('')}</div>`
+    : `<div class="card empty">${ic('box', 32)}<b>لا منتجات بعد</b>تظهر هنا منتجات طلبيات FreeVendor المستوردة.</div>`;
+  Sheet.open({ title: 'أسعار الشراء', body, footer: list.length ? `<button class="btn grow" data-act="catalog-save">حفظ وإعادة الحساب</button>` : '' });
+  openCatalog.list = list;
+}
+
 function markReturned(entry, taxe, opts = {}) {
   const was = entry.status === 'delivered', lost = entry.amount;
   entry.status = 'returned'; entry.returnedAt = new Date().toISOString(); entry.returnTaxe = taxe;
@@ -1217,7 +1519,7 @@ function playChime() {
       o.start(start); o.stop(start + dur + 0.02);
     });
   } catch {}
-  if (navigator.vibrate) try { navigator.vibrate([40, 30, 40]); } catch {}
+  if (navigator.vibrate && navigator.userActivation?.hasBeenActive) try { navigator.vibrate([40, 30, 40]); } catch {}
 }
 async function requestNotifPermission() {
   if (!('Notification' in window)) { toast('متصفحك لا يدعم إشعارات النظام', { tone: 'bad' }); return false; }
@@ -1768,13 +2070,19 @@ function viewSettings() {
   <section class="card pad-s" id="sec-notif"><b style="display:block;padding:2px 0 6px">التنبيهات</b>
     <div class="sw"><div class="tx"><b>تنبيه صوتي عند وصول تحديث</b><span>رنّة قصيرة عند تسليم، مرتجع، أو وصول بيانات من جهاز آخر</span></div><label class="toggle"><input type="checkbox" data-bind="settings.soundAlert" ${s.soundAlert ? 'checked' : ''} aria-label="تنبيه صوتي"><i></i></label></div>
     <div class="sw"><div class="tx"><b>إشعار من المتصفح</b><span>يظهر حتى إذا كناش مفتوح في تبويب آخر (يحتاج إذنك مرة واحدة)</span></div><label class="toggle"><input type="checkbox" id="notifToggle" ${s.browserNotif ? 'checked' : ''} aria-label="إشعار المتصفح"><i></i></label></div></section>
-  <section class="card pad" id="sec-vonder"><b>استيراد طلبيات FreeVendor</b>
-    <div class="sub" style="margin:2px 0 10px">الموقع لا يوفّر API، فنقرأ الصفحة من متصفحك (وأنت مسجّل الدخول). تُستورد فقط الطلبيات بحالة «Confirmé avec le client».</div>
-    <ol class="sub" style="margin:0 0 10px;padding-inline-start:18px;line-height:1.9"><li>اسحب الزر التالي إلى شريط المفضلة (مرة واحدة)</li><li>افتح صفحة الطلبيات في freevendor.space واضغط عليه</li><li>ارجع إلى هنا والصق النص ثم اضغط استيراد</li></ol>
-    <div style="margin:0 0 10px"><a class="btn sec2" id="vonderBm" href="#" draggable="true" style="display:inline-flex" onclick="event.preventDefault();toast('اسحب الزر إلى شريط المفضلة، لا تضغط عليه هنا.')">⇪ كناش ← FreeVendor</a></div>
-    <label class="field"><span>الصق النص هنا</span><textarea id="vonderPaste" class="ltr" rows="3" placeholder='{"kanach":"vonder",...}'></textarea></label>
-    <div class="row wrap-r" style="margin-top:8px"><button class="btn grow" data-act="vonder-import">استيراد الطلبيات</button></div>
-    <div class="sub" style="margin-top:8px">فائدتي لكل طلبية تُقدَّر بقيمة «فائدتي / قطعة» الافتراضية أعلاه (الصفحة لا تعرضها)، ثم تُصحَّح تلقائياً عند التسليم عبر Yalidine.</div></section>
+  <section class="card pad" id="sec-vonder"><b>من FreeVendor إلى Yalidine</b>
+    <div class="sub" style="margin:2px 0 10px">FreeVendor بلا API، فيقرأ كناش صفحة الطلبيات من متصفحك وأنت مسجّل الدخول، ثم يُنشئ الطرود عند Yalidine بالـAPI.</div>
+    <ol class="sub" style="margin:0 0 10px;padding-inline-start:18px;line-height:1.9"><li>شغّل الوسيط على حاسوبك: <code class="n">node kanach-proxy.js</code> وافتح كناش من <span class="n">http://localhost:8787</span></li>
+      <li>اسحب الزر التالي إلى شريط المفضلة (مرة واحدة)</li><li>في freevendor.space افتح «Gérer les commandes» واضغط الزر: تُقرأ الطلبيات «Confirmé avec le client» وتصل هنا وحدها خلال ثوانٍ</li></ol>
+    <div class="row wrap-r" style="margin:0 0 12px"><a class="btn" id="vonderBm" href="#" draggable="true" style="display:inline-flex" onclick="event.preventDefault();toast('اسحب الزر إلى شريط المفضلة، لا تضغط عليه هنا.')">⇪ كناش ← FreeVendor</a>
+      <span class="badge ${SAME_ORIGIN_PROXY || (S.carrier.proxy || '').trim() ? 'pos' : 'wait'}">${SAME_ORIGIN_PROXY || (S.carrier.proxy || '').trim() ? 'الاستقبال المباشر يعمل' : 'بدون وسيط: الصق النص يدوياً'}</span></div>
+    <div class="sw"><div class="tx"><b>رفع تلقائي إلى Yalidine</b><span>تُنشأ الطرود فور وصول الطلبيات — فقط ما طابقت ولايته وبلديته (أو مكتبه) بثقة كاملة وهاتفه صالح وزبونه بلا سوابق. الباقي ينتظر مراجعتك.</span></div><label class="toggle"><input type="checkbox" data-bind="settings.autoPush" data-render ${s.autoPush ? 'checked' : ''} aria-label="رفع تلقائي"><i></i></label></div>
+    <div class="sw"><div class="tx"><b>Livraison gratuite عند Yalidine</b><span>«Prix de vente» من FreeVendor يشمل التوصيل، فيدفع الزبون المبلغ نفسه ويقتطع Yalidine رسومه منه. أوقفه فقط إن كنت تريد أن يضيف Yalidine سعره فوق المبلغ.</span></div><label class="toggle"><input type="checkbox" data-bind="settings.fvFreeShipping" ${s.fvFreeShipping !== false ? 'checked' : ''} aria-label="Livraison gratuite"><i></i></label></div>
+    <div class="two" style="margin-top:10px"><label class="field"><span>الوزن الافتراضي (كغ)</span><input type="number" inputmode="decimal" step="0.1" data-bind="settings.defWeight" data-num value="${num(s.defWeight)}"><small>يُستعمل إن لم يُحدَّد وزن المنتج.</small></label>
+      <div class="field"><span>أسعار الشراء</span><button class="btn sec2 block" data-act="catalog-open">${ic('box', 18)}<span>${Object.keys(S.catalog).length} منتج — تعديل</span></button></div></div>
+    <details class="acc" style="box-shadow:none;margin-top:4px"><summary style="padding:12px 14px;font-size:14px">${ic('copy', 18)}بدون وسيط: لصق يدوي</summary><div class="inner">
+      <label class="field"><span>الصق النص الذي نسخه الزر</span><textarea id="vonderPaste" class="ltr" rows="3" placeholder='{"kanach":"vonder",...}'></textarea></label>
+      <button class="btn block" data-act="vonder-import">استيراد الطلبيات</button></div></details></section>
   <section class="card pad"><b>نسخ احتياطي</b><div class="sub" style="margin:2px 0 12px">الصيغة متوافقة مع نسخ النسخة القديمة.</div>
     <div class="row wrap-r"><button class="btn sec2 grow" data-act="backup">${ic('download', 18)}<span>تحميل نسخة (JSON)</span></button><button class="btn sec2 grow" data-act="restore">${ic('upload', 18)}<span>استعادة من ملف</span></button></div><input type="file" id="restoreFile" accept=".json,application/json" hidden>
     <div class="sub" style="margin-top:10px">${S.entries.length} حركة محفوظة على هذا الجهاز.</div></section>
@@ -1798,7 +2106,7 @@ const AFTER = {
   },
   carrier() { const d = $('#setupAcc'); if (d) d.ontoggle = () => { ui.openSetup = d.open; }; },
   settings() {
-    const bm = $('#vonderBm'); if (bm) bm.setAttribute('href', VONDER_BOOKMARKLET);
+    const bm = $('#vonderBm'); if (bm) bm.setAttribute('href', fvBookmarklet());
     const nt = $('#notifToggle');
     if (nt) nt.onchange = async e => {
       if (e.target.checked) { const ok = await requestNotifPermission(); if (!ok) { e.target.checked = false; return; } }
@@ -2129,8 +2437,19 @@ const A = {
     let j; try { j = JSON.parse(raw); } catch { toast('النص غير صالح. انسخه من جديد بالزر.', { tone:'bad' }); return; }
     if (j.kanach !== 'vonder' || !Array.isArray(j.rows)) { toast('هذا ليس نصّ كناش.', { tone:'bad' }); return; }
     const r = importVonder(j.rows); commit();
-    toast(`FreeVendor: ${r.added} جديدة • ${r.dup} موجودة • ${r.skipped} مُتجاهَلة (حالتها ليست مؤكدة)${r.risky ? ` • ⚠ ${r.risky} من زبائن لهم مرتجعات` : ''}`);
+    toast(`FreeVendor: ${r.added} جديدة • ${r.dup} موجودة • ${r.skipped} مُتجاهَلة${r.risky ? ` • ⚠ ${r.risky} من زبائن لهم مرتجعات` : ''}`, r.missing.size ? { action: { label: 'أكمل أسعار الشراء', fn: () => openCatalog([...r.missing]) } } : {});
     if (r.added) pingUpdate('كناش — FreeVendor', `${r.added} طلبية جديدة`);
+    if (S.settings.autoPush) autoPush();
+  },
+  'catalog-open': () => openCatalog(),
+  'catalog-save': () => {
+    const list = openCatalog.list || [], vals = {};
+    $$('[data-cat]').forEach(el => { const i = +el.dataset.i; (vals[i] = vals[i] || {})[el.dataset.cat] = el.value; });
+    let n = 0;
+    Object.entries(vals).forEach(([i, v]) => { const name = list[+i], old = catalogGet(name) || {}; if (!name) return;
+      if (num(v.cost) !== num(old.cost) || num(v.weight) !== num(old.weight)) { if (num(v.cost) > 0 || num(v.weight) > 0) catalogSet(name, v.cost, v.weight); else delete S.catalog[prodKey(name)]; n++; } });
+    let m = 0; S.entries.forEach(e => { if (e.fromVonder && e.items?.length && e.status !== 'returned') { priceFvEntry(e); m++; } });
+    Sheet.close(); commit(); toast(`حُفظ ${n} منتج • أُعيد حساب ${m} طلبية`);
   },
   'cloud-down': async () => { const r = await ask({ title: 'تحميل من السحابة؟', body: 'سيستبدل هذا بيانات هذا الجهاز ببيانات السحابة.', ok: 'تحميل', danger: true }); if (!r.ok) return; cloudReplace(); },
   'export-xlsx': () => exportXlsx(),
@@ -2175,7 +2494,7 @@ document.addEventListener('input', e => { if (e.target.dataset && e.target.datas
 document.addEventListener('change', e => { if (e.target.id === 'yalFile') handleYalFile(e.target.files[0]); if (e.target.id === 'restoreFile') handleRestore(e.target.files[0]); });
 
 function downloadBackup() {
-  const data = { app: 'كناش', version: 3, exportedAt: new Date().toISOString(), entries: S.entries, budgetExp: S.budgetExp, budgets: S.budgets, settings: S.settings };
+  const data = { app: 'كناش', version: 3, exportedAt: new Date().toISOString(), entries: S.entries, budgetExp: S.budgetExp, budgets: S.budgets, catalog: S.catalog, settings: S.settings };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = `kanach-${iso()}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   toast('تم تنزيل النسخة الاحتياطية');
@@ -2190,7 +2509,7 @@ function handleRestore(file) {
       if (!entries) throw new Error('bad');
       const res = await ask({ title: 'استعادة النسخة؟', body: `${entries.length} حركة موجودة في الملف. سيستبدل هذا كل بيانات هذا الجهاز.`, ok: 'استعادة', danger: true });
       if (!res.ok) return;
-      S.entries = entries; S.budgetExp = Array.isArray(j.budgetExp) ? j.budgetExp : []; S.budgets = j.budgets || {};
+      S.entries = entries; S.budgetExp = Array.isArray(j.budgetExp) ? j.budgetExp : []; S.budgets = j.budgets || {}; if (j.catalog) S.catalog = j.catalog;
       if (j.settings) S.settings = { ...DEFAULT_SETTINGS, ...j.settings };
       saveSettings(); commit(); toast('تمت الاستعادة بنجاح');
     } catch { toast('ملف غير صالح', { tone: 'bad' }); }
@@ -2264,7 +2583,7 @@ function mergeById(local, remote, tombs) {
   return [...m.values()];
 }
 const mergeTombs = (a = {}, b = {}) => { const o = { ...a }; Object.entries(b).forEach(([k, v]) => { if (!o[k] || v > o[k]) o[k] = v; }); return o; };
-const stateKey = d => JSON.stringify([(d.entries || []).map(x => x.id + '@' + (x.updatedAt || '')).sort(), (d.budgetExp || []).map(x => x.id + '@' + (x.updatedAt || '')).sort(), Object.keys(d.deleted || {}).sort(), Object.keys(d.deletedB || {}).sort(), Object.entries(d.budgets || {}).sort()]);
+const stateKey = d => JSON.stringify([(d.entries || []).map(x => x.id + '@' + (x.updatedAt || '')).sort(), (d.budgetExp || []).map(x => x.id + '@' + (x.updatedAt || '')).sort(), Object.keys(d.deleted || {}).sort(), Object.keys(d.deletedB || {}).sort(), Object.entries(d.budgets || {}).sort(), Object.entries(d.catalog || {}).map(([k, v]) => k + '@' + v.updatedAt).sort()]);
 const byNewest = (a, b) => String(b.timestamp || b.date || '').localeCompare(String(a.timestamp || a.date || ''));
 function applyMerged(remote) {
   const before = stateKey(S);
@@ -2272,6 +2591,7 @@ function applyMerged(remote) {
   S.entries = mergeById(S.entries, remote.entries, S.deleted).sort(byNewest);
   S.budgetExp = mergeById(S.budgetExp, remote.budgetExp, S.deletedB);
   S.budgets = { ...(remote.budgets || {}), ...S.budgets };
+  Object.entries(remote.catalog || {}).forEach(([k, v]) => { if (!S.catalog[k] || (v.updatedAt || '') > (S.catalog[k].updatedAt || '')) S.catalog[k] = v; });
   resetSigs();
   return stateKey(S) !== before;
 }
@@ -2284,7 +2604,7 @@ async function cloudSync({ manual = false } = {}) {
     const remote = await jbCall('GET'), hasRemote = Array.isArray(remote?.entries);
     const changedHere = hasRemote ? applyMerged(remote) : false;
     if (changedHere) { writeLocal(); if (remote.device && remote.device !== deviceId()) pingUpdate('كناش', 'وصل تحديث من جهاز آخر'); }
-    const mine = { entries: S.entries, budgetExp: S.budgetExp, budgets: S.budgets, deleted: S.deleted, deletedB: S.deletedB };
+    const mine = { entries: S.entries, budgetExp: S.budgetExp, budgets: S.budgets, deleted: S.deleted, deletedB: S.deletedB, catalog: S.catalog };
     if (!hasRemote || stateKey(mine) !== stateKey(remote)) {
       const stamp = new Date().toISOString();
       await jbCall('PUT', { ...mine, updatedAt: stamp, device: deviceId(), v: 4 });
@@ -2306,7 +2626,7 @@ function updateCloudBadge() { const b = $('#btnCloud'); if (b) b.innerHTML = `${
 async function cloudReplace() {
   try {
     const j = await jbCall('GET'); if (!Array.isArray(j.entries)) throw new Error('empty');
-    S.entries = j.entries; S.budgetExp = j.budgetExp || []; S.budgets = j.budgets || {}; S.deleted = j.deleted || {}; S.deletedB = j.deletedB || {};
+    S.entries = j.entries; S.budgetExp = j.budgetExp || []; S.budgets = j.budgets || {}; S.deleted = j.deleted || {}; S.deletedB = j.deletedB || {}; S.catalog = j.catalog || S.catalog;
     resetSigs(); writeLocal(); CLOUD.dirty = false; ui.cloud = 'ok'; ui.cloudMsg = `مُستبدلة من السحابة • ${S.entries.length} حركة`; toast('تم التحميل من السحابة');
   } catch { ui.cloud = 'err'; ui.cloudMsg = 'فشل التحميل'; toast(ui.cloudMsg, { tone: 'bad' }); }
   render();
@@ -2346,7 +2666,7 @@ async function sendChat() {
 async function boot() {
   document.documentElement.setAttribute('data-theme', localStorage.getItem(LS.theme) || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
   await loadAll();
-  const mig = migrateV5();
+  const mig = migrateV5(); migrateV6();
   if (/^https?:$/.test(location.protocol)) {
     try { const r = await fetch('/__kanach', { cache: 'no-store' }); const j = await r.json(); SAME_ORIGIN_PROXY = j?.kanach === 'proxy'; } catch {}
     if ('serviceWorker' in navigator && (location.protocol === 'https:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname))) navigator.serviceWorker.register('sw.js').catch(() => {});
@@ -2372,6 +2692,7 @@ async function boot() {
   if (mig?.n) toast(`صُحِّحت فائدة ${mig.n} طلبية بأسعار التوصيل الحقيقية: ${mig.delta >= 0 ? 'زادت' : 'نقصت'} بـ ${fmtNum(Math.abs(mig.delta))} دج — التفاصيل في الإعدادات`, { action: { label: 'عرض', fn: () => go('settings', { scrollTo: 'sec-fees' }) } });
   initCloud();
   scheduleAutoSync();
+  scheduleInbox();
   if (Carrier.configured()) setTimeout(() => syncCarrier({ manual: false }), 1200);
   document.addEventListener('visibilitychange', () => {
     const m = num(S.carrier.interval);

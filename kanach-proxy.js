@@ -6,19 +6,43 @@
 const http = require('http'), https = require('https'), fs = require('fs'), path = require('path');
 const PORT = process.env.PORT || 8787, UP = process.env.UPSTREAM || 'https://api.yalidine.app';
 const ORIGINS = (process.env.KANACH_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+// صندوق الوارد: ما يرسله زر «كناش ← FreeVendor» من صفحة freevendor.space. يُحفظ في inbox.json بجانب الوسيط.
+const FV_ORIGIN = /^https:\/\/([a-z0-9-]+\.)*freevendor\.space$/i;
+const INBOX_FILE = process.env.KANACH_INBOX || path.join(__dirname, 'inbox.json');
+let inbox = []; try { inbox = JSON.parse(fs.readFileSync(INBOX_FILE, 'utf8')); } catch {}
+const saveInbox = () => fs.writeFile(INBOX_FILE, JSON.stringify(inbox), () => {});
 const STATIC = { '/': 'kanach.html', '/kanach.html': 'kanach.html', '/sw.js': 'sw.js', '/manifest.webmanifest': 'manifest.webmanifest', '/icon.svg': 'icon.svg' };
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml' };
 
 function corsFor(req) {
   const o = req.headers.origin;
-  const allow = !ORIGINS.length ? '*' : (o && ORIGINS.includes(o) ? o : '');
+  const allow = !ORIGINS.length ? '*' : (o && (ORIGINS.includes(o) || FV_ORIGIN.test(o)) ? o : '');
   return { ...(allow ? { 'Access-Control-Allow-Origin': allow, Vary: 'Origin' } : {}), 'Access-Control-Allow-Headers': 'Content-Type,X-API-ID,X-API-TOKEN', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS', 'Access-Control-Allow-Private-Network': 'true' };
 }
 
 http.createServer((req, res) => {
   const cors = corsFor(req), pathname = req.url.split('?')[0];
   if (req.method === 'OPTIONS') { res.writeHead(204, cors); return res.end(); }
-  if (pathname.startsWith('/__kanach')) { res.writeHead(200, { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify({ kanach: 'proxy', v: 3, post: true, static: true })); }
+  if (pathname === '/__kanach/inbox') {
+    const json = (code, obj) => { res.writeHead(code, { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+    if (req.method === 'POST') {
+      const o = req.headers.origin;
+      if (o && !FV_ORIGIN.test(o) && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o) && !ORIGINS.includes(o)) return json(403, { error: 'origin not allowed' });
+      const chunks = []; let size = 0;
+      req.on('data', c => { size += c.length; if (size < 5e6) chunks.push(c); });
+      return req.on('end', () => {
+        let payload; try { payload = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return json(400, { error: 'bad json' }); }
+        if (payload?.kanach !== 'vonder' || !Array.isArray(payload.rows)) return json(400, { error: 'not a kanach payload' });
+        const id = new Date().toISOString() + '-' + Math.random().toString(36).slice(2, 6);
+        inbox.push({ id, payload }); inbox = inbox.slice(-50); saveInbox();
+        console.log(`FreeVendor ← ${payload.rows.length} طلبية وصلت (${new Date().toLocaleTimeString()})`);
+        json(200, { ok: true, id, queued: inbox.length });
+      });
+    }
+    const after = new URL(req.url, 'http://x').searchParams.get('after') || '';
+    return json(200, { items: inbox.filter(x => x.id > after) });
+  }
+  if (pathname.startsWith('/__kanach')) { res.writeHead(200, { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify({ kanach: 'proxy', v: 4, post: true, static: true, inbox: true })); }
   if (req.method === 'GET' && STATIC[pathname]) {
     const f = path.join(__dirname, STATIC[pathname]);
     return fs.readFile(f, (err, buf) => {

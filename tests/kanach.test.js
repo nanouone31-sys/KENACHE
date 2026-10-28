@@ -14,7 +14,8 @@ const eq = (name, got, want) => {
 };
 
 (async () => {
-  const proxy = spawn(process.execPath, [path.join(__dirname, '..', 'kanach-proxy.js')], { env: { ...process.env, PORT } });
+  const inboxFile = path.join(require('os').tmpdir(), `kanach-inbox-${PORT}-${Date.now()}.json`);
+  const proxy = spawn(process.execPath, [path.join(__dirname, '..', 'kanach-proxy.js')], { env: { ...process.env, PORT, KANACH_INBOX: inboxFile } });
   await new Promise(r => proxy.stdout.once('data', r));
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'ar-DZ' });
@@ -108,7 +109,7 @@ const eq = (name, got, want) => {
       await p2.waitForFunction(() => typeof S !== 'undefined' && S.entries.length);
       eq('ترحيل localStorage ← IndexedDB', await p2.evaluate(async () => [S.entries[0].id, (await IDB.get('entries'))[0].id]), ['old1', 'old1']);
       // معلّقة أدرار: 1048 + هامش 400 القديم (يبقى له) − (1400 − 1000 + 0.75%×16000=120) = 928 • مُسلَّمة: 14000 − (12802 − 400) − 1150 = 448
-      eq('ترحيل v5: إلغاء 400 وتصحيح الفوائد', await p2.evaluate(() => [S.settings.fixedFee, S.settings.v, Math.round(S.entries[0].amount), Math.round(S.entries[1].amount), readJSON('kanach_mig5', {}).n]), [0, 5, 928, 448, 2]);
+      eq('ترحيل v5: إلغاء 400 وتصحيح الفوائد', await p2.evaluate(() => [S.settings.fixedFee, S.settings.v, Math.round(S.entries[0].amount), Math.round(S.entries[1].amount), readJSON('kanach_mig5', {}).n]), [0, 6, 928, 448, 2]);
       await c2.close();
     }
 
@@ -143,8 +144,80 @@ const eq = (name, got, want) => {
       eq('مزامنة: لا رفع عندما لا جديد', puts, before);
       await A.c.close(); await B.c.close();
     }
+
+    // ---- FreeVendor ← قارئ الصفحة ← الوسيط ← كناش ← Yalidine (صفحة FreeVendor مقلَّدة من لقطات الشاشة) ----
+    {
+      const row = (id, prices, status, client, seller) => `<tr><td><span class="b">#000${id}</span></td><td>${prices.map(p => `<div>${p} DZD</div>`).join('')}</td>
+        <td><button>${status}</button><button>Note</button></td><td>${client.join('<br>')}</td><td><span>${seller} DZD</span></td><td><button class="eye" onclick="openM('${id}')"><i>👁</i></button></td></tr>`;
+      const modal = (id, d) => `<div id="m${id}" class="modal" style="display:none;position:fixed;inset:0;background:#fff"><span class="x" onclick="this.parentElement.style.display='none'">×</span>
+        <button>Imprimer</button><p>- Numéro de commande : #000${id}</p><p>- Statut : <span>Annulé</span></p><p>- Informations client :</p>
+        <p>- Client : ${d.client}</p><p>- Numéro de téléphone : ${d.phone}</p><p>- La wilaya de : ${d.wilaya}</p><p>- La commune : ${d.commune}</p><p>- L'adresse : ${d.address}</p><p>- Questions et remarques : /</p>
+        <table><tr><th>Produit</th><th>Quantité</th><th>Prix</th><th>Prix de cet quantité</th><th>Plus d'informations</th></tr><tr><td>${d.product}</td><td>1</td><td>${d.total}</td><td>${d.total} DZD</td><td>- Taille:<br>- Couleur:</td></tr></table>
+        <div style="display:flex;justify-content:space-between"><div>Prix total de la commande :</div><div>${d.total} DZD</div></div>
+        <div style="display:flex;justify-content:space-between"><div>Type de livraison :</div><div>${d.type}</div></div>
+        <div style="display:flex;justify-content:space-between"><div>Prix de livraison :</div><div>${d.fee} DZD</div></div>
+        <div style="display:flex;justify-content:space-between"><div>Prix total :</div><div>${d.total + d.fee} DZD</div></div>
+        <div style="display:flex;justify-content:space-between"><div>Prix de vente :</div><div>${d.total + d.fee + d.seller} DZD</div></div></div>`;
+      const D1 = { client: 'nawal fetouh', phone: '0557439912', wilaya: 'Oran', commune: 'Oran', address: 'hai el hamri', product: 'Dell Laptop | Intel Core i3 10th Gen - 8GB RAM', total: 48800, fee: 600, seller: 1000, type: 'Livraison à domicile' };
+      const D2 = { client: 'هادي حسن', phone: '0668882231', wilaya: 'médéa', commune: 'Médéa', address: 'centre', product: 'HP EliteBook', total: 44000, fee: 350, seller: 1350, type: 'Stop desk' };
+      const html = `<!doctype html><meta charset="utf-8"><body><table><tr><th>Numéro de commande</th><th>Prix total</th><th>Statut</th><th>Le client</th><th>Le vendeur</th><th>Options</th></tr>
+        ${row('585899', [48800, 600, 49400, 50400], 'Confirmè avec le client', ['nawal fetouh', '0557439912', 'Oran'], 1000)}
+        ${row('585893', [44000, 550, 44550, 45550], 'Annulé', ['هادي حسن', '0668882231', 'médéa'], 1000)}
+        ${row('585888', [44000, 350, 44350, 45700], 'Confirmè avec le client', ['هادي حسن', '0668882231', 'médéa'], 1350)}
+        </table>${modal('585899', D1)}${modal('585888', D2)}<script>function openM(id){document.getElementById('m'+id).style.display='block'}</script>`;
+      const fv = await ctx.newPage();
+      await fv.route('https://freevendor.space/**', r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: html }));
+      await fv.goto('https://freevendor.space/home/account');
+      fv.on('dialog', d => { errors.push('dialog: ' + d.message()); d.dismiss(); });
+      const code = await page.evaluate(() => decodeURIComponent(fvBookmarklet().slice('javascript:'.length)));
+      // 1) بلا إذن «الشبكة المحلية»: يظهر زر «افتح كناش وأرسل» ويسلّم الطلبيات لتبويب كناش بـ postMessage
+      await page.evaluate(() => { S.entries = []; S.deleted = {}; resetSigs(); persist(); });
+      await fv.evaluate(c => (0, eval)(c), code);
+      await fv.waitForSelector('text=افتح كناش وأرسل', { timeout: 15000 });
+      const [kan] = await Promise.all([ctx.waitForEvent('page'), fv.click('text=افتح كناش وأرسل')]);
+      await fv.waitForFunction(() => /وصلت/.test(document.body.innerText), null, { timeout: 15000 });
+      eq('postMessage: الطلبيات وصلت لتبويب كناش', await kan.evaluate(() => S.entries.map(e => e.vonderId).sort()), ['000585888', '000585899']);
+      await page.waitForFunction(() => S.entries.length === 2, null, { timeout: 5000 });
+      eq('التبويب الآخر حدّث نفسه (BroadcastChannel)', await page.evaluate(() => S.entries.map(e => e.vonderId).sort()), ['000585888', '000585899']);
+      await kan.close();
+      // 2) مع الإذن: إرسال مباشر إلى الوسيط ثم يلتقطها كناش من صندوق الوارد
+      await ctx.grantPermissions(['local-network-access'], { origin: 'https://freevendor.space' });
+      await fv.reload();
+      await fv.evaluate(c => (0, eval)(c), code);
+      await fv.waitForFunction(() => /أُرسلت/.test(document.body.innerText), null, { timeout: 15000 });
+      await fv.close();
+
+      // Yalidine وهمي: نتحقق مما يُرسَل فعلاً
+      const sent = [];
+      await page.route(/\/(wilayas|communes|centers|parcels)\//, async r => {
+        const u = new globalThis.URL(r.request().url());
+        if (u.pathname.startsWith('/wilayas')) return r.fulfill({ json: { has_more: false, data: [{ id: 31, name: 'Oran' }, { id: 26, name: 'Médéa' }] } });
+        if (u.pathname.startsWith('/communes')) return r.fulfill({ json: { has_more: false, data: u.searchParams.get('wilaya_id') === '31' ? [{ id: 3101, name: 'Oran', is_deliverable: true }, { id: 3102, name: 'Bir El Djir', is_deliverable: true }] : [{ id: 2601, name: 'Médéa', is_deliverable: true }, { id: 2602, name: 'Berrouaghia', is_deliverable: true }] } });
+        if (u.pathname.startsWith('/centers')) return r.fulfill({ json: { has_more: false, data: [{ center_id: 26101, name: 'Agence de Médéa', commune_id: 2601, commune_name: 'Médéa', wilaya_id: 26 }, { center_id: 26102, name: 'Agence Berrouaghia', commune_id: 2602, commune_name: 'Berrouaghia', wilaya_id: 26 }] } });
+        if (r.request().method() === 'POST') { const body = JSON.parse(r.request().postData()); sent.push(...body); return r.fulfill({ json: Object.fromEntries(body.map(p => [p.order_id, { success: true, order_id: p.order_id, tracking: 'yal-T' + p.order_id }])) }); }
+        return r.fulfill({ json: { data: [] } });
+      });
+      await page.evaluate(() => { S.entries = []; S.deleted = {}; resetSigs(); localStorage.removeItem('kanach_inbox_after'); S.carrier.apiId = 'id'; S.carrier.apiToken = 'tok'; S.settings.autoPush = false; catalogSet('Dell Laptop | Intel Core i3 10th Gen - 8GB RAM', 45000, 2); persist(); });
+      await page.evaluate(() => pollInbox());
+      await page.waitForFunction(() => S.entries.length === 2, null, { timeout: 5000 });
+      eq('FreeVendor: المؤكدة فقط وصلت', await page.evaluate(() => S.entries.map(e => e.vonderId).sort()), ['000585888', '000585899']);
+      // Dell: سعر التطبيق 48800، سعر الزبون 49800، المحصَّل 50400؛ الشراء 45000 → تكلفة 47700 → فائدتي 1100
+      // التوصيل: Yalidine وهران 850 − FreeVendor 600 + 0.75%×50400 (378) = 628 → صافي 472
+      eq('تسعير طلبية FreeVendor بسعر شراء معروف', await page.evaluate(() => { const e = S.entries.find(x => x.vonderId === '000585899');
+        return [e.finalPrice, e.sellPrice, e.ship.price, e.ship.fvFee, e.ship.type, e.ship.weight, Math.round(e.grossProfit), Math.round(e.amount), e.profitAssumed]; }), [48800, 49800, 50400, 600, 'home', 2, 1100, 472, false]);
+      eq('طلبية بلا سعر شراء: فائدة افتراضية + مكتب', await page.evaluate(() => { const e = S.entries.find(x => x.vonderId === '000585888'); return [e.profitAssumed, e.ship.type, e.ship.price, e.sellPrice]; }), [true, 'desk', 45700, 45350]);
+
+      await page.evaluate(() => { S.settings.autoPush = true; });
+      const res = await page.evaluate(() => autoPush());
+      eq('الرفع التلقائي: 2 طرد (منزل + مكتب)', res, { ok: 2, wait: 0 });
+      const p1 = sent.find(x => x.order_id === '000585899'), p2 = sent.find(x => x.order_id === '000585888');
+      eq('الطرد: Prix du colis = Prix de vente + Livraison gratuite', [p1.price, p1.freeshipping, p1.is_stopdesk, p1.to_wilaya_name, p1.to_commune_name, p1.contact_phone, p1.firstname, p1.familyname, p1.weight], [50400, true, false, 'Oran', 'Oran', '0557439912', 'nawal', 'fetouh', 2]);
+      eq('طرد المكتب: المكتب وبلديته', [p2.is_stopdesk, p2.stopdesk_id, p2.to_commune_name, p2.price, p2.weight], [true, 26101, 'Médéa', 45700, 1]);
+      eq('أرقام التتبع حُفظت', await page.evaluate(() => S.entries.map(e => e.tracking).sort()), ['yal-T000585888', 'yal-T000585899']);
+      await page.unroute(/\/(wilayas|communes|centers|parcels)\//);
+    }
   } catch (e) { failed++; console.error('✗ استثناء:', e); }
-  await browser.close(); proxy.kill();
+  await browser.close(); proxy.kill(); try { require('fs').unlinkSync(inboxFile); } catch {}
   console.log(`\n${passed} نجح • ${failed} فشل`);
   process.exit(failed ? 1 : 0);
 })();

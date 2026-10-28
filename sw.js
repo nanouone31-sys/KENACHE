@@ -1,6 +1,6 @@
 // كناش — يعمل بلا إنترنت: الواجهة من الذاكرة المؤقتة، والبيانات أصلاً في IndexedDB.
 // الصفحة: الشبكة أولاً (لتصلك التحديثات)، ثم النسخة المحفوظة عند الانقطاع. لا يُخزَّن أي طلب API.
-const CACHE = 'kanach-v5';
+const CACHE = 'kanach-v6';
 const SHELL = ['./kanach.html', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', e => {
