@@ -275,6 +275,51 @@ const eq = (name, got, want) => {
       eq('الملصق عُلِّم كمطبوع', await page.evaluate(() => [!!S.entries[0].labelPrintedAt, labelQueue().length]), [true, 0]);
     }
     eq('الإعدادات مطوية وتنفتح على القسم المطلوب', await page.evaluate(() => { go('settings', { scrollTo: 'sec-fees' }); return [document.querySelectorAll('details.set').length, document.getElementById('sec-fees').open, document.getElementById('sec-cloud').open]; }), [10, true, false]);
+
+    // ---- منتجاتي: سعر الشراء والبيع والعمولة، وملء النموذج تلقائياً ----
+    eq('اقتصاديات المنتج', await page.evaluate(() => { const e = productEcon({ cost: 45000, price: 48800 }); return [e.fee, e.profit, Math.round(e.margin * 1000) / 10, e.customer]; }), [2700, 1100, 2.3, 49950]);
+    await page.evaluate(() => { S.catalog = {}; S.entries = []; resetSigs(); persist(); go('calc', { calcTab: 'products' }); });
+    await page.click('[data-act=prod-new]');
+    await page.fill('[data-pe=name]', 'Dell Latitude i5'); await page.fill('[data-pe=cost]', '45000'); await page.fill('[data-pe=price]', '48800'); await page.fill('[data-pe=weight]', '2.2');
+    eq('معاينة المنتج', await page.evaluate(() => /1\s?100/.test($('#peCalc').innerText) && /2\s?700/.test($('#peCalc').innerText)), true);
+    await page.click('[data-act=pe-save]');
+    eq('المنتج حُفظ', await page.evaluate(() => { const c = catalogGet('Dell Latitude i5'); return [c.cost, c.price, c.weight]; }), [45000, 48800, 2.2]);
+    await page.evaluate(() => { go('home'); openForm({ type: 'vonder' }); });
+    await page.fill('[data-f=product]', 'Dell Latitude i5'); await page.dispatchEvent('[data-f=product]', 'change');
+    eq('اختيار المنتج يملأ السعر وفائدتي', await page.evaluate(() => [num(F.price), num(F.myProfit)]), [45000, 1100]);
+    await page.evaluate(() => Sheet.close());
+
+    // ---- التسديد: 6% + فائدة البائع عن المُسلَّمة، تسجيل ثم تراجع، ولا يظهر في الطلبيات ولا يغيّر الفائدة ----
+    eq('التسديد', await page.evaluate(async () => {
+      const d = iso();
+      S.entries = [
+        { id: 's1', type: 'vonder', status: 'delivered', date: d, desc: 'أ', productPrice: 45000, quantity: 1, sellerProfit: 1000, totalSellerProfit: 1000, amount: 472, appFeePct: 6 },
+        { id: 's2', type: 'vonder', status: 'delivered', date: d, desc: 'ب', productPrice: 10000, quantity: 2, sellerProfit: 800, amount: 300 },
+        { id: 's3', type: 'vonder', status: 'pending', date: d, desc: 'ج', productPrice: 5000, quantity: 1, sellerProfit: 500, amount: 200 }];
+      resetSigs(); persist();
+      const before = duesTotals(duesList()), net0 = computeStats(S.entries).net;
+      go('reports', { rTab: 'settle' }); $$('[data-st]').forEach(x => { x.checked = x.dataset.st === 's1'; });
+      const realAsk = window.ask; window.ask = async () => ({ ok: true, value: 'حوالة' });
+      await A['settle-do'](); window.ask = realAsk;
+      const after = duesTotals(duesList()), h = S.entries.find(e => e.type === 'settle');
+      const hidden = filteredEntries().every(e => e.type !== 'settle'), net1 = computeStats(S.entries).net;
+      window.ask = async () => ({ ok: true }); await A['settle-undo']({ id: h.id }); window.ask = realAsk;
+      return [before.fee, before.seller, before.n, h.amount, h.note, after.n, after.total, hidden, net0 === net1, duesList().length];
+    }), [3900, 1800, 2, 3700, 'حوالة', 1, 2000, true, true, 2]);
+
+    // ---- الحفاظ على البيانات: نسخة تلقائية قبل التحديث، والاستعادة ترجع البيانات كما كانت ----
+    {
+      const c3 = await browser.newContext(), p3 = await c3.newPage();
+      await p3.goto(URL + '__kanach');
+      await p3.evaluate(() => { localStorage.setItem('kanach_app_v', '7'); localStorage.setItem('kanach_settings_v1', JSON.stringify({ v: 6, appFeePct: 6 }));
+        localStorage.setItem('dailyEntries_v2', JSON.stringify([{ id: 'keep1', type: 'vonder', status: 'delivered', isActualProfit: true, netClient: 14000, netSource: 'excel', date: '2026-09-01', desc: 'قديمة', amount: 448, myProfit: 1048, quantity: 1, productPrice: 11700, totalCost: 12402, sellerProfit: 1150, sellPrice: 15000, buffer: 0 }])); });
+      await p3.goto(URL); await p3.waitForFunction(() => typeof S !== 'undefined' && S.entries.length);
+      eq('الترقية لا تغيّر البيانات', await p3.evaluate(() => { const e = S.entries.find(x => x.id === 'keep1'); return [e.id, e.amount, e.netClient]; }), ['keep1', 448, 14000]);
+      eq('نسخة تلقائية قبل التحديث', await p3.evaluate(async () => { const l = await snapshots(); return [l.length, /قبل التحديث/.test(l[0].reason), l[0].data.entries[0].id, localStorage.getItem('kanach_app_v')]; }), [1, true, 'keep1', '8']);
+      eq('الاستعادة', await p3.evaluate(async () => { S.entries = []; persist(); const id = (await snapshots())[0].id; window.ask = async () => ({ ok: true }); await A['snap-restore']({ id }); return [S.entries.length, S.entries[0].amount, (await snapshots()).length]; }), [1, 448, 2]);
+      await c3.close();
+    }
+    eq('الشعار في الواجهة', await page.evaluate(() => !!document.querySelector('.topbar .logo svg') && !!document.querySelector('.side .logo svg')), true);
   } catch (e) { failed++; console.error('✗ استثناء:', e); }
   await browser.close(); proxy.kill(); try { require('fs').unlinkSync(inboxFile); } catch {}
   console.log(`\n${passed} نجح • ${failed} فشل`);
