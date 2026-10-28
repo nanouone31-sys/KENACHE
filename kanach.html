@@ -352,6 +352,15 @@ section[id^="sec-"]>b:first-child,.card.pad>b:first-child{font-size:15.5px}
 a.btn{text-decoration:none}
 .btn.wa{background:#1F8B4C;border-color:#1F8B4C;color:#fff}
 .custwarn{margin-top:-2px;margin-bottom:12px}
+.rbar{position:relative;display:inline-block;width:64px;height:6px;border-radius:3px;background:var(--line);vertical-align:middle;margin-inline-end:6px}
+.rbar i{position:absolute;inset-block:0;inset-inline-start:0;border-radius:3px}
+.rbar s{position:absolute;top:-3px;height:12px;border-inline-start:2px solid var(--ink-2)}
+.hbar{position:relative;display:inline-block;height:8px;border-radius:4px;background:var(--sunk);min-width:40px;width:100%;vertical-align:middle;overflow:hidden}
+.hbar i{position:absolute;inset-block:0;inset-inline-start:0;background:var(--brand);border-radius:4px;opacity:.75}
+td .hbar{width:60px;margin-inline-end:6px}
+details.set{margin:0}details.set>summary{gap:12px;padding:14px 16px}details.set>summary b{display:block;font-size:15px}details.set>summary small{display:block;font-weight:400;font-size:12.5px;color:var(--ink-3);margin-top:1px}
+details.set .ico{width:34px;height:34px;border-radius:10px}details.set>.inner{padding:4px 16px 16px}
+.tasks .att{padding:12px 16px}.hero .mini{display:flex;gap:16px;margin-top:12px;font-size:12.5px;color:rgba(255,255,255,.75);flex-wrap:wrap}.hero .mini b{color:#fff;font-size:14px;margin-inline-end:4px}
 .parsed{display:flex;gap:6px;flex-wrap:wrap;margin:-4px 0 12px}
 </style>
 </head>
@@ -442,7 +451,7 @@ const LS = {
   jbId:'jsonbin_id', jbKey:'jsonbin_key', device:'device_id', lastChange:'local_last_change', draft:'kanach_last_vonder', cloudSeen:'kanach_cloud_seen'
 };
 const DEFAULT_SETTINGS = { appName:'كناش', adsPaused:true, defPrice:11700, defProfit:1048, defSeller:1150, defTaxe:250, soundAlert:true, browserNotif:false,
-  appFeePct:6, fixedFee:0, codPct:0.75, originWilaya:'Oran', defShip:'home', assumeRate:80, callScript:true, autoPush:false, fvFreeShipping:true, defWeight:1 };
+  appFeePct:6, fixedFee:0, codPct:0.75, originWilaya:'Oran', defShip:'home', assumeRate:80, callScript:true, autoPush:false, fvFreeShipping:true, defWeight:1, labelFormat:'thermal', labelSender:'', labelPhone:'', targetEV:500, monthGoal:0 };
 const DEFAULT_CARRIER  = { provider:'yalidine', apiId:'', apiToken:'', proxy:'', auto:true, interval:30, netMode:'est', extraFixed:0, extraPct:0, lastSync:null, log:[], undo:null };
 
 const readJSON = (k, fb) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } };
@@ -804,7 +813,7 @@ function normParcel(p) {
     status: pick(p, 'last_status', 'status') || '', statusDate: pick(p, 'date_last_status', 'updated_at') || '',
     price: num(pick(p, 'price')), deliveryFee: num(pick(p, 'delivery_fee', 'deliveryfee', 'fee')),
     netExact: exact !== undefined ? num(exact) : 0, taxeRetour: num(pick(p, 'return_fee', 'taxe_retour', 'retour_fee')),
-    payment: pick(p, 'payment_status') || '', freeshipping: pick(p, 'freeshipping'),
+    payment: pick(p, 'payment_status') || '', freeshipping: pick(p, 'freeshipping'), label: pick(p, 'label', 'label_url', 'bordereau') || '',
     name: `${first} ${fam}`.trim(), phone: String(pick(p, 'contact_phone', 'phone') || ''),
     product: pick(p, 'product_list', 'designation') || '', wilaya: pick(p, 'to_wilaya_name', 'wilaya') || '', commune: pick(p, 'to_commune_name', 'commune') || ''
   };
@@ -969,7 +978,8 @@ function applyChanges(changes, { source = 'api' } = {}) {
     e.yalidineStatus = p.status;
     e.carrier = { ...(e.carrier || {}), code:'yalidine', status: p.status, stage: ch.stage, checkedAt: now, statusDate: p.statusDate || e.carrier?.statusDate || '',
       price: p.price || 0, deliveryFee: p.deliveryFee || 0, payment: p.payment || '',
-      priceMismatch: p.price > 0 && e.sellPrice > 0 && Math.abs(p.price - e.sellPrice) > 1 };
+      priceMismatch: p.price > 0 && e.sellPrice > 0 && Math.abs(p.price - e.sellPrice - (e.ship?.fvFee || 0)) > 1 && Math.abs(p.price - e.sellPrice) > 1,
+      label: (/^https?:\/\//.test(p.label || '') ? p.label : '') || e.carrier?.label || '' };
     if (ch.kind === 'deliver' || ch.kind === 'net') {
       const wasActual = e.isActualProfit;
       if (e.type === 'vonder' && e.totalCost && ch.net.net > 0) {
@@ -1368,7 +1378,10 @@ async function sendParcels(rows) {
       else if (netErr && !['auth', 'blocked', 'rate'].includes(netErr.kind) && !(netErr.kind === 'http' && netErr.status < 500)) { tr = await reconcileByOrderId(r.e.vonderId); if (!tr) msg = 'لم يصل ردّ مؤكد: ' + netErr.message + ' — تحقق من Yalidine قبل إعادة المحاولة.'; }
       else if (netErr) msg = netErr.message;
       else if (res && !tr) msg = 'ردّ غير متوقع: ' + JSON.stringify(res).slice(0, 160);
-      if (tr) { r.e.tracking = tr; r.e.yalidinePushedAt = new Date().toISOString(); r.e.ship.type = r.type; r.e.ship.yalCommune = buildParcel(r).to_commune_name; r.on = false; ok.push(r); }
+      if (tr) { r.e.tracking = tr; r.e.yalidinePushedAt = new Date().toISOString(); r.e.ship.type = r.type; r.e.ship.yalCommune = buildParcel(r).to_commune_name;
+        if (r.type === 'desk') r.e.ship.officeName = r.centers.find(c => String(c.center_id) === String(r.centerId))?.name || '';
+        const lk = x && pick(x, 'label', 'labels', 'label_url', 'bordereau', 'bordereau_url'); if (lk && /^https?:\/\//.test(lk)) r.e.carrier = { ...(r.e.carrier || {}), label: lk };
+        r.on = false; ok.push(r); }
       else { r.err = msg || 'فشل غير معروف'; bad.push(r); }
     }
     await sleep(400);
@@ -1388,7 +1401,7 @@ async function pushSend() {
   PUSH.sending = false;
   PUSH.rows = PUSH.rows.filter(r => !ok.includes(r));
   PUSH.msg = `${ok.length} طرد أُنشئ بنجاح${bad.length ? ` • ${bad.length} فشل (الأسباب تحت كل طلبية)` : ''}`;
-  if (!PUSH.rows.length) { Sheet.close(); toast(`تم إنشاء ${ok.length} طرد عند Yalidine وحُفظت أرقام التتبع.`); return; }
+  if (!PUSH.rows.length) { Sheet.close(); toast(`تم إنشاء ${ok.length} طرد عند Yalidine وحُفظت أرقام التتبع.`, ok.length ? { action: { label: 'اطبع الملصقات', fn: () => printLabels(ok.map(r => r.e)) } } : {}); return; }
   renderPush();
 }
 /* الرفع التلقائي: يُرسل فقط الطلبيات المطابقة بثقة كاملة؛ البقية تنتظر مراجعتك */
@@ -1403,7 +1416,7 @@ async function autoPush() {
     const { ok, bad } = go_.length ? await sendParcels(go_) : { ok: [], bad: [] };
     const wait = rows.length - ok.length;
     S.carrier.log = [{ ts: new Date().toISOString(), auto: true, pushed: ok.length, failed: bad.length, waiting: wait }, ...(S.carrier.log || [])].slice(0, 20); saveCarrier();
-    if (ok.length || wait) toast(`Yalidine: ${ok.length} طرد أُنشئ تلقائياً${wait ? ` • ${wait} تنتظر مراجعتك` : ''}`, wait ? { action: { label: 'مراجعة', fn: () => openPush() } } : {});
+    if (ok.length || wait) toast(`Yalidine: ${ok.length} طرد أُنشئ تلقائياً${wait ? ` • ${wait} تنتظر مراجعتك` : ''}`, wait ? { action: { label: 'مراجعة', fn: () => openPush() } } : ok.length ? { action: { label: 'اطبع الملصقات', fn: () => printLabels(ok.map(r => r.e)) } } : {});
     return { ok: ok.length, wait };
   } catch (err) { toast('الرفع التلقائي: ' + err.message, { tone: 'bad' }); return null; }
   finally { AUTO_PUSHING = false; }
@@ -1657,19 +1670,23 @@ const SPECIAL = { s_prep:'تحضير', s_transit:'في الطريق', s_out:'خ�
 function attentionItems() {
   const E = S.entries, out = [];
   const add = (k, tone, icon, t, s) => { const n = E.filter(Q[k]).length; if (n) out.push({ k, tone, icon, t: `${n} ${t}`, s }); };
-  const calls = callList().length;
+  const calls = callList().length, ready = Carrier.configured() ? readyToPush().length : 0, labels = labelQueue().length;
+  if (ready) out.push({ act: 'push-open', tone: 'info', icon: 'upload', t: `${ready} طلبية جاهزة للرفع إلى Yalidine`, s: 'مطابقة الولاية والبلدية ثم إنشاء الطرود' });
+  if (labels) out.push({ act: 'labels-open', tone: 'info', icon: 'download', t: `${labels} ملصق شحن لم يُطبع`, s: 'باركود رقم التتبع + الزبون + المبلغ' });
   if (calls) out.push({ act: 'call-open', tone: 'neg', icon: 'phone', t: `اتصل اليوم: ${calls} زبون`, s: 'رسائل واتساب جاهزة للفاشلة والخارجة للتسليم والمتأخرة' });
   add('risk', 'neg', 'undo', 'طلبية راجعة أو فاشلة التسليم', 'تواصل مع الزبون قبل أن تُرجَع إليك');
   add('mismatch', 'wait', 'alert', 'طلبية مبلغها عند Yalidine يختلف عن سعر الزبون', 'راجع السعر قبل التسليم');
   add('stale', 'wait', 'clock', 'طلبية معلّقة منذ أكثر من 7 أيام', 'تحقّق من حالتها');
   add('notrack', 'info', 'link', 'طلبية بلا رقم تتبع', 'لا تُتابَع تلقائياً حتى تضيف رقم التتبع');
   add('est', 'info', 'info', 'طلبية فائدتها تقديرية', 'ارفع ملف Yalidine لتأكيد Net الحقيقي');
+  const losing = buildProductStats(periodRange('30d')).filter(p => p.decision === 'stop');
+  if (losing.length) out.push({ go: 'reports', sub: 'products', tone: 'neg', icon: 'chart', t: `${losing.length} منتج يخسر لكل طرد مُرسَل`, s: losing.slice(0, 2).map(p => p.name.slice(0, 30)).join('، ') });
   return out;
 }
 
 const TABS = [['home','الرئيسية','home'], ['orders','الطلبيات','list'], ['calc','الحاسبة','calc'], ['carrier','التوصيل','truck'], ['reports','التقارير','chart']];
 const SIDE_TABS = [...TABS, ['settings','الإعدادات','sliders']];
-function go(tab, extra = {}) { if (Sheet.isOpen()) Sheet.close(); ui.tab = tab; Object.assign(ui, extra); const target = ui.scrollTo; render(); if (!target) window.scrollTo({ top: 0 }); }
+function go(tab, extra = {}) { if (Sheet.isOpen()) Sheet.close(); ui.tab = tab; Object.assign(ui, extra); const target = ui.scrollTo; if (target && /^sec-/.test(target)) (ui.secOpen = ui.secOpen || {})[target] = true; render(); if (!target) window.scrollTo({ top: 0 }); }
 
 function render() {
   RATE_CACHE = null; CUST_CACHE = null;
@@ -1707,10 +1724,7 @@ function viewHome() {
   const att = attentionItems();
   const hasTrackedPending = S.entries.some(e => Q.pending(e) && cleanTrack(e.tracking));
   const empty = !S.entries.length;
-  const week = [...Array(7)].map((_, i) => { const d = addDays(new Date(), i - 6), k = iso(d), day = S.entries.filter(e => e.date === k && isOrder(e));
-    return { k, n: WEEKDAYS[d.getDay()].replace('ال', '').slice(0, 3), d: sum(day.filter(e => e.status === 'delivered'), e => e.amount), p: sum(day.filter(e => e.status === 'pending'), e => e.amount) }; });
-  const mx = Math.max(1, ...week.map(w => Math.max(0, w.d) + Math.max(0, w.p)));
-  const recent = S.entries.filter(isOrder).slice().sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, 6);
+  const recent = S.entries.filter(isOrder).slice().sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, 5);
   const allPend = S.entries.filter(Q.pending);
   const pipe = [
     ['s_prep', 'prep', allPend.filter(e => stageOf(e) === 'prep')],
@@ -1720,40 +1734,35 @@ function viewHome() {
     ['returned', 'returned', inR.filter(Q.returned)]
   ];
   const minus = (lbl, v) => v ? `<i>−</i><span>${lbl} <b class="n">${fmtNum(v)}</b></span>` : '';
-  const left = `
+  const decided = st.delivered.length + st.returned.length;
+  const hero = `
   <section class="hero" aria-label="صافي الفائدة">
     <div class="lbl">صافي فائدتي · ${r.label}</div>
     <div class="big ${st.net >= 0 ? '' : 'neg'}">${money(st.net)}</div>
     <div class="eq"><span>محققة <b class="n">${fmtNum(st.deliveredProfit)}</b></span>${minus('مصاريف', st.expenses)}${minus('مرتجعات', st.returnLoss)}${adsShown ? minus('إعلانات', st.ads) : ''}</div>
+    <div class="mini"><span><b class="n">${st.orders.length}</b> طلبية</span>${decided ? `<span>تسليم <b class="n">${Math.round(st.deliveryRate)}%</b></span>` : ''}${st.delivered.length ? `<span><b class="n">${fmtNum(st.avg)}</b> دج / مُسلَّمة</span>` : ''}</div>
     ${st.pending.length ? `<div class="pend">${ic('clock', 16)}<span>+ ${fmtNum(st.pendingProfit)} دج تنتظر التسليم (${st.pending.length} طلبية)</span></div>` : ''}
   </section>
-  ${empty ? `<div class="card empty">${ic('box', 36)}<b>ابدأ بأول طلبية</b>اضغط «إضافة» لتسجّل طلبية وتعرف فائدتك قبل الإرسال.<div style="margin-top:14px"><button class="btn" data-act="add">${ic('plus', 18)}<span>إضافة طلبية</span></button></div></div>` : ''}
-  `;
-  const pipeHTML = `<div class="sec">مسار الطلبيات <span class="sub" style="font-weight:500">اضغط على مرحلة لعرض طلبياتها</span></div>
-  <div class="pipe">${pipe.map(([f, k, list]) => { const u = STAGE_UI[k]; return `<button class="stg" style="--c:${u.c}" data-act="go" data-tab="orders" data-filter="${f}"><span class="k"><i></i>${u.label}</span><div class="v">${list.length}</div><div class="m">${list.length ? fmtNum(sum(list, e => e.amount)) + ' دج' : '—'}</div></button>`; }).join('')}</div>
-  `;
-  const left2 = `${!Carrier.configured() && hasTrackedPending ? `<button class="card att" style="margin-top:12px" data-act="go" data-tab="carrier"><span class="ico info">${ic('truck')}</span><span class="grow"><b>اربط Yalidine</b><span>لتتحدّث حالة طلبياتك وفائدتك الصافية تلقائياً</span></span><span class="go">${ic('chev', 18)}</span></button>` : ''}
-  ${recent.length ? `<div class="sec">آخر الطلبيات <button class="lnk" data-act="go" data-tab="orders" data-filter="all">عرض الكل</button></div><div class="card list">${recent.map(orderRow).join('')}</div>` : ''}`;
-  const kpis = `<div class="sec">أداء ${r.label}</div>
-  <div class="kpis">
-    <div class="card kpi"><div class="v">${st.orders.length}</div><div class="t">طلبية</div></div>
-    <div class="card kpi"><div class="v ${st.deliveryRate >= 70 ? 'pos' : ''}">${st.delivered.length + st.returned.length ? Math.round(st.deliveryRate) + '%' : '—'}</div><div class="t">نسبة التسليم</div></div>
-    <div class="card kpi"><div class="v">${money(st.avg)}</div><div class="t">متوسط الفائدة / طلبية</div></div>
-    <div class="card kpi"><div class="v ${st.returnRate > 25 ? 'neg' : ''}">${st.orders.length ? Math.round(st.returnRate) + '%' : '—'}</div><div class="t">نسبة المرتجع</div></div>
-  </div>`;
-  const attHTML = `
-  ${att.length ? `<div class="sec">تحتاج انتباهك</div><div class="card list">${att.map(a => `<button class="att" ${a.act ? `data-act="${a.act}"` : a.go ? `data-act="go" data-tab="${a.go}" data-sub="${a.sub}"` : `data-act="go" data-tab="orders" data-filter="${a.k}"`}><span class="ico ${a.tone}">${ic(a.icon)}</span><span class="grow"><b>${a.t}</b><span>${a.s}</span></span><span class="go">${ic('chev', 18)}</span></button>`).join('')}</div>` : ''}`;
-  const right = `
-  <div class="sec">آخر 7 أيام</div>
+  ${empty ? `<div class="card empty">${ic('box', 36)}<b>ابدأ بأول طلبية</b>اضغط «إضافة» أو «لصق من FreeVendor» لتسجّل طلبياتك وتعرف فائدتك قبل الإرسال.<div class="row" style="margin-top:14px;justify-content:center"><button class="btn" data-act="add">${ic('plus', 18)}<span>إضافة طلبية</span></button><button class="btn sec2" data-act="fv-paste">لصق من FreeVendor</button></div></div>` : ''}`;
+  const tasks = att.length ? `<div class="sec">مهامك الآن</div><div class="card list tasks">${att.map(a => `<button class="att" ${a.act ? `data-act="${a.act}"` : a.go ? `data-act="go" data-tab="${a.go}" data-sub="${a.sub}"` : `data-act="go" data-tab="orders" data-filter="${a.k}"`}><span class="ico ${a.tone}">${ic(a.icon)}</span><span class="grow"><b>${a.t}</b><span>${a.s}</span></span><span class="go">${ic('chev', 18)}</span></button>`).join('')}</div>`
+    : (empty ? '' : `<div class="sec">مهامك الآن</div><div class="card pad-s row" style="gap:12px"><span class="ico pos">${ic('check')}</span><div><b>لا شيء ينتظرك</b><div class="sub">كل الطلبيات تحت المتابعة.</div></div></div>`);
+  const pipeHTML = `<div class="sec">مسار الطلبيات</div>
+  <div class="pipe">${pipe.map(([f, k, list]) => { const u = STAGE_UI[k]; return `<button class="stg" style="--c:${u.c}" data-act="go" data-tab="orders" data-filter="${f}"><span class="k"><i></i>${u.label}</span><div class="v">${list.length}</div><div class="m">${list.length ? fmtNum(sum(list, e => e.amount)) + ' دج' : '—'}</div></button>`; }).join('')}</div>`;
+  const connect = !Carrier.configured() && hasTrackedPending ? `<button class="card att" style="margin-top:12px" data-act="go" data-tab="carrier"><span class="ico info">${ic('truck')}</span><span class="grow"><b>اربط Yalidine</b><span>لتتحدّث حالة طلبياتك وفائدتك الصافية تلقائياً</span></span><span class="go">${ic('chev', 18)}</span></button>` : '';
+  const recentHTML = recent.length ? `<div class="sec">آخر الطلبيات <button class="lnk" data-act="go" data-tab="orders" data-filter="all">عرض الكل</button></div><div class="card list">${recent.map(orderRow).join('')}</div>` : '';
+  return `<div class="chips" role="group" aria-label="الفترة" style="margin-bottom:12px">${PERIODS.map(([k, l]) => `<button class="chip" data-act="period" data-v="${k}" aria-pressed="${ui.period === k}">${l}</button>`).join('')}</div>
+  <div class="home-grid"><div>${hero}</div><div>${tasks}</div></div>
+  ${empty ? '' : `<div class="home-full">${pipeHTML}</div>${connect}${recentHTML}`}`;
+}
+function weekChartHTML() {
+  const week = [...Array(7)].map((_, i) => { const d = addDays(new Date(), i - 6), k = iso(d), day = S.entries.filter(e => e.date === k && isOrder(e));
+    return { k, n: WEEKDAYS[d.getDay()].replace('ال', '').slice(0, 3), d: sum(day.filter(e => e.status === 'delivered'), e => e.amount), p: sum(day.filter(e => e.status === 'pending'), e => e.amount) }; });
+  const mx = Math.max(1, ...week.map(w => Math.max(0, w.d) + Math.max(0, w.p)));
+  return `<div class="sec">آخر 7 أيام</div>
   <div class="card pad-s"><div class="bars" role="img" aria-label="فائدة كل يوم">${week.map(w => { const dh = Math.max(0, w.d) / mx * 100, ph = Math.max(0, w.p) / mx * 100;
     return `<div class="bar"><div class="v">${w.d + w.p > 0 ? fmtNum(w.d + w.p) : ''}</div><div class="stack2"><i class="p" style="height:${ph}%"></i><i class="d" style="height:${dh}%"></i></div><div class="d0">${w.n}</div></div>`; }).join('')}</div>
     <div class="legend"><span><s style="background:var(--profit)"></s>مُسلَّمة</span><span><s style="background:var(--wait-soft);border:1px dashed var(--wait)"></s>معلّقة</span></div></div>`;
-  return `<div class="chips" role="group" aria-label="الفترة" style="margin-bottom:12px">${PERIODS.map(([k, l]) => `<button class="chip" data-act="period" data-v="${k}" aria-pressed="${ui.period === k}">${l}</button>`).join('')}</div>
-  <div class="home-grid"><div>${left}</div><div>${att.length ? attHTML : kpis}</div></div>
-  <div class="home-full">${pipeHTML}</div>
-  <div class="home-grid"><div>${left2}</div><div>${att.length ? kpis : ''}${right}</div></div>`;
 }
-
 function stageBadge(e) {
   if (e.type === 'return') return '<span class="badge neg">مرتجع</span>';
   if (!isOrder(e)) return '';
@@ -1830,7 +1839,7 @@ function viewCarrier() {
       ${noTrack ? `<div class="note warn" style="margin-top:12px">${ic('alert', 18)}<div>${noTrack} طلبية معلّقة بلا رقم تتبع — <button class="lnk" style="color:var(--brand);font-weight:700" data-act="go" data-tab="orders" data-filter="notrack">أضف الأرقام</button> لتُتابَع تلقائياً.</div></div>` : ''}`
     : `<ol style="margin:14px 18px 0;line-height:1.9;color:var(--ink-2);font-size:14px"><li>من حسابك في Yalidine افتح صفحة الـAPI وأنشئ مفتاحاً (API ID + Token).</li><li>الصقهما أدناه واضغط «اختبار الاتصال».</li><li>أضف رقم التتبع لكل طلبية — وسيتكفّل التطبيق بالباقي.</li></ol>`}
   </section>
-  ${conf ? `<section class="card pad"><div class="row"><span class="ico info">${ic('upload', 20)}</span><div class="grow"><b>رفع طلبيات FreeVendor إلى Yalidine</b><div class="sub">${readyToPush().length ? readyToPush().length + ' طلبية مؤكدة جاهزة للرفع' : 'لا توجد طلبيات جاهزة — استورد من FreeVendor أولاً (الإعدادات ← استيراد طلبيات FreeVendor)'}</div></div></div><button class="btn block" style="margin-top:12px" data-act="push-open">رفع إلى Yalidine…</button><div class="row" style="margin-top:8px"><button class="btn sec2 grow" data-act="fv-paste">${ic('download', 18)}<span>لصق من FreeVendor</span></button><button class="btn ghost" data-act="go" data-tab="settings" data-sub="vonder">الإعداد</button></div></section>` : ''}
+  ${conf ? `<section class="card pad"><div class="row"><span class="ico info">${ic('upload', 20)}</span><div class="grow"><b>رفع طلبيات FreeVendor إلى Yalidine</b><div class="sub">${readyToPush().length ? readyToPush().length + ' طلبية مؤكدة جاهزة للرفع' : 'لا توجد طلبيات جاهزة — استورد من FreeVendor أولاً (الإعدادات ← استيراد طلبيات FreeVendor)'}</div></div></div><button class="btn block" style="margin-top:12px" data-act="push-open">رفع إلى Yalidine…</button><div class="row" style="margin-top:8px"><button class="btn sec2 grow" data-act="fv-paste">${ic('download', 18)}<span>لصق من FreeVendor</span></button><button class="btn sec2 grow" data-act="labels-open">${ic('box', 18)}<span>الملصقات${labelQueue().length ? ` (${labelQueue().length})` : ''}</span></button><button class="btn ghost" data-act="go" data-tab="settings" data-sub="vonder">الإعداد</button></div></section>` : ''}
   ${reviewHTML()}
   <details class="acc" id="setupAcc" ${!conf || ui.openSetup ? 'open' : ''}><summary>${ic('key', 20)}بيانات الربط</summary><div class="inner">
     <label class="field"><span>API ID</span><input type="text" class="ltr" autocomplete="off" data-bind="carrier.apiId" value="${esc(c.apiId)}" placeholder="مثال: 1234567890"></label>
@@ -1985,6 +1994,196 @@ function openCallList() {
   Sheet.open({ title: 'اتصل اليوم', body, footer: '' });
 }
 
+/* =====================================================================
+   ملصقات الشحن: باركود Code 128 لرقم التتبع + بطاقة 10×15 سم (أو 4 في ورقة A4)
+   جدول الأنماط مأخوذ من python-barcode (106 رمزاً × 11 وحدة) + رمز التوقف (13 وحدة)
+   ===================================================================== */
+const C128 = '11011001100110011011001100110011010010011000100100011001000100110010011001000100110001001000110010011001001000110010001001100010010010110011100100110111001001100111010111001100100111011001001110011011001110010110010111001100100111011011100100110011101001110110111011101001100111001011001110010011011101100100111001101001110011001011011011000110110001101100011011010100011000100010110001000100011010110001000100011010001000110001011010001000110001010001100010001010110111000101100011101000110111010111011000101110001101000111011011101110110110100011101100010111011011101000110111000101101110111011101011000111010001101110001011011101101000111011000101110001101011101111010110010000101111000101010100110000101000011001001011000010010000110100001011001000010011010110010000101100001001001101000010011000010100001101001000011001011000010010110010100001111011101011000010100100011110101010011110010010111100100100111101011110010010011110100100111100101111010010011110010100111100100101101101111011011110110111101101101010111100010100011110100010111101011110100010111100010111101010001111010001010111011110101111011101110101111011110101110110100001001101001000011010011100'.match(/.{11}/g), C128_STOP = '1100011101011';
+function code128Bits(text) {
+  const s = String(text || '').replace(/[^\x20-\x7E]/g, '');
+  let sum = 104; const codes = [104];
+  [...s].forEach((ch, i) => { const v = ch.charCodeAt(0) - 32; codes.push(v); sum += v * (i + 1); });
+  codes.push(sum % 103);
+  return codes.map(c => C128[c]).join('') + C128_STOP;
+}
+function barcodeSVG(text, h = 64) {
+  const bits = code128Bits(text), q = 10, w = bits.length + q * 2; let x = 0, d = '';
+  while (x < bits.length) { if (bits[x] === '1') { let r = x; while (bits[r] === '1') r++; d += `M${x + q} 0h${r - x}v${h}h-${r - x}z`; x = r; } else x++; }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="${esc(text)}"><path d="${d}" fill="#000"/></svg>`;
+}
+const labelLink = e => e.carrier?.label || '';
+const labelQueue = () => S.entries.filter(e => isOrder(e) && e.status === 'pending' && cleanTrack(e.tracking) && !e.labelPrintedAt);
+function labelData(e) {
+  const sh = e.ship || {}, y = e.yalidineInfo || {}, wid = wilayaOfEntry(e);
+  return { trk: cleanTrack(e.tracking), name: sh.name || y.clientName || (e.desc || '').replace(/0\d{9}/, '').trim(), phone: normPhone(sh.phone || y.phone || phoneOfEntry(e)),
+    wilaya: wid ? `${AR_W[wid]} (${pad2(wid)}) — \u2066${YAL_FEES[wid].n}\u2069` : (sh.wilaya || y.wilaya || ''), commune: sh.yalCommune || y.commune || sh.communeFV || '',
+    address: sh.address || '', desk: sh.type === 'desk', office: sh.officeName || '', cod: Math.round(sh.price || ((e.sellPrice || 0) + (sh.fvFee || 0))),
+    product: sh.product || e.product || '', order: e.vonderId || '', notes: sh.notes || '', date: fmtDate(iso()) };
+}
+function labelHTML(d) {
+  const s = S.settings;
+  return `<section class="lbl"><header><div><b>${esc(s.labelSender || s.appName || 'كناش')}</b>${s.labelPhone ? `<span>${esc(s.labelPhone)}</span>` : ''}<span>من: ${esc(s.originWilaya || '')}</span></div><div class="y">Yalidine<span>${d.date}</span></div></header>
+    <div class="to"><small>إلى</small><b class="name">${esc(d.name)}</b><div class="ph">${esc(d.phone)}</div><div class="wl">${esc(d.wilaya)}${d.commune ? ` • ${esc(d.commune)}` : ''}</div>${d.address ? `<div class="ad">${esc(d.address)}</div>` : ''}</div>
+    <div class="row2"><div class="tag">${d.desk ? 'مكتب STOP DESK' : 'توصيل للمنزل'}${d.office ? `<span>${esc(d.office)}</span>` : ''}</div><div class="cod"><small>المبلغ عند الاستلام</small><b>${fmtNum(d.cod)} <i>دج</i></b></div></div>
+    <div class="bc">${barcodeSVG(d.trk)}<div class="trk">${esc(d.trk)}</div></div>
+    <footer><span>${esc(d.product).slice(0, 90)}</span>${d.order ? `<b>#${esc(d.order)}</b>` : ''}</footer>${d.notes ? `<div class="nt">ملاحظة: ${esc(d.notes)}</div>` : ''}</section>`;
+}
+function printLabels(list) {
+  list = list.filter(e => cleanTrack(e.tracking));
+  if (!list.length) { toast('لا توجد طلبيات برقم تتبع للطباعة.'); return; }
+  const a4 = S.settings.labelFormat === 'a4';
+  const css = `@page{size:${a4 ? 'A4' : '100mm 150mm'};margin:0}*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',Tahoma,'Noto Naskh Arabic',sans-serif;color:#000;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .sheet{${a4 ? 'display:grid;grid-template-columns:105mm 105mm;grid-auto-rows:148.5mm;width:210mm' : ''}}
+    .lbl{width:100mm;height:150mm;${a4 ? 'width:105mm;height:148.5mm;' : 'page-break-after:always;break-after:page;'}padding:5mm;display:flex;flex-direction:column;gap:3mm;border:${a4 ? '0.3mm dashed #999' : '0'};overflow:hidden;direction:rtl}
+    ${a4 ? '.lbl:nth-child(4n){break-after:page}' : ''}
+    header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:0.6mm solid #000;padding-bottom:2mm;font-size:9pt}header b{font-size:12pt;display:block}header span{display:block}
+    .y{text-align:left;font-weight:800;font-size:13pt;letter-spacing:.3px}.y span{font-weight:400;font-size:8pt}
+    .to small,.cod small{font-size:8pt;color:#333;display:block}.name{font-size:17pt;display:block;line-height:1.2}.ph{font-size:15pt;font-weight:700;direction:ltr;text-align:right;letter-spacing:.5px}.wl{font-size:12pt;font-weight:700}.ad{font-size:10pt}
+    .row2{display:flex;gap:3mm;align-items:stretch}.tag{flex:1;border:0.6mm solid #000;border-radius:2mm;padding:2mm;font-weight:800;font-size:11pt;display:flex;flex-direction:column;justify-content:center}.tag span{font-weight:400;font-size:9pt}
+    .cod{flex:1.2;background:#000;color:#fff;border-radius:2mm;padding:2mm 3mm;text-align:center}.cod small{color:#ddd}.cod b{font-size:20pt;direction:ltr;display:block}.cod i{font-style:normal;font-size:11pt}
+    .bc{margin-top:auto;text-align:center}.bc svg{width:100%;height:26mm;display:block}.trk{font:700 15pt ui-monospace,Consolas,monospace;letter-spacing:2px;direction:ltr;margin-top:1mm}
+    footer{display:flex;justify-content:space-between;gap:2mm;font-size:8.5pt;border-top:0.3mm solid #000;padding-top:1.5mm}.nt{font-size:9pt;font-weight:700}
+    .bar{position:fixed;top:0;inset-inline:0;background:#12463F;color:#fff;padding:10px 16px;font:600 14px system-ui;display:flex;gap:12px;align-items:center;direction:rtl}.bar button{font:inherit;padding:6px 14px;border:0;border-radius:8px;cursor:pointer}
+    @media screen{body{background:#e9e6df;padding:56px 16px 16px}.lbl{background:#fff;margin:0 auto 12px;box-shadow:0 2px 10px rgba(0,0,0,.15)}.sheet{margin:0 auto}}@media print{.bar{display:none}}`;
+  const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>ملصقات الشحن (${list.length})</title><style>${css}</style></head><body>
+    <div class="bar"><span>${list.length} ملصق • ${a4 ? '4 في ورقة A4' : '10×15 سم (طابعة حرارية)'}</span><button onclick="print()">طباعة</button></div><div class="sheet">${list.map(e => labelHTML(labelData(e))).join('')}</div>
+    <script>addEventListener('load',function(){setTimeout(function(){print()},300)})<\/script></body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { toast('المتصفح منع فتح نافذة الطباعة — اسمح بالنوافذ المنبثقة لكناش.', { tone: 'bad' }); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+  const now = new Date().toISOString(); list.forEach(e => { e.labelPrintedAt = now; }); commit();
+}
+function openLabels() {
+  const pend = S.entries.filter(e => isOrder(e) && e.status === 'pending' && cleanTrack(e.tracking)).sort((a, b) => !!a.labelPrintedAt - !!b.labelPrintedAt || String(b.timestamp).localeCompare(String(a.timestamp)));
+  const body = pend.length ? `<div class="seg" style="padding:0 0 10px"><button data-act="lbl-fmt" data-v="thermal" aria-pressed="${S.settings.labelFormat !== 'a4'}">10×15 حرارية</button><button data-act="lbl-fmt" data-v="a4" aria-pressed="${S.settings.labelFormat === 'a4'}">A4 (4 في الورقة)</button></div>
+    <div class="card list">${pend.map(e => { const d = labelData(e); return `<label class="pv"><input type="checkbox" data-lbl="${esc(e.id)}" ${e.labelPrintedAt ? '' : 'checked'}><div class="grow"><b style="font-size:14px">${esc(d.name)}</b>
+      <div class="sub"><span class="trk">${esc(d.trk)}</span> • ${esc(d.wilaya.split(' — ').pop())} • <b class="n">${fmtNum(d.cod)}</b> دج</div>
+      <div class="row" style="gap:6px;margin-top:4px">${e.labelPrintedAt ? `<span class="badge">طُبع ${timeAgo(e.labelPrintedAt)}</span>` : '<span class="badge info">لم يُطبع</span>'}${labelLink(e) ? `<a class="badge pos" href="${esc(labelLink(e))}" target="_blank" rel="noopener" onclick="event.stopPropagation()">بوردرو Yalidine ↗</a>` : ''}</div></div></label>`; }).join('')}</div>
+    <div class="sub" style="margin-top:10px">ملصق كناش يحمل باركود رقم التتبع ومعلومات الزبون والمبلغ. إن كانت Yalidine تشترط بوردرو خاصاً بها، اطبعه من رابط «بوردرو Yalidine» أو من حسابك عندهم.</div>`
+    : `<div class="card empty">${ic('box', 32)}<b>لا طرود بأرقام تتبع بعد</b>تظهر هنا الطلبيات المعلّقة التي لها رقم تتبع.</div>`;
+  Sheet.open({ title: 'ملصقات الشحن', body, footer: pend.length ? `<button class="btn grow" data-act="lbl-print">${ic('download', 18)}<span>طباعة المحدَّد</span></button>` : '' });
+}
+
+/* =====================================================================
+   إحصائيات المنتجات والولايات — مع قراءة اقتصادية: هامش المساهمة لكل طرد مُرسَل، نقطة التعادل، والقرار
+   ===================================================================== */
+const productOf = e => (e.items?.length === 1 ? e.items[0].name : e.product) || (e.items?.length ? e.items.map(i => i.name).join(' + ') : '') || 'بدون اسم منتج';
+function buildProductStats(range) {
+  const map = new Map(), byId = new Map(S.entries.map(e => [e.id, e]));
+  const P = name => { const k = prodKey(name) || '—'; if (!map.has(k)) map.set(k, { key: k, name, orders: 0, delivered: 0, returned: 0, pending: 0, units: 0, revenue: 0, profit: 0, pendingProfit: 0, returnLoss: 0, w: {}, last: '' }); return map.get(k); };
+  S.entries.forEach(e => {
+    if (!inRange(e, range)) return;
+    if (e.type === 'return') { const o = byId.get(e.linkedOrderId); if (o && isOrder(o)) P(productOf(o)).returnLoss += num(e.amount); return; }
+    if (!isOrder(e)) return;
+    const p = P(productOf(e)), wid = wilayaOfEntry(e) || 0, w = p.w[wid] || (p.w[wid] = { o: 0, d: 0, r: 0, profit: 0, loss: 0 });
+    p.orders++; w.o++; p.units += e.type === 'sonazone' ? (e.sonaQuantity || 1) : (e.quantity || 1); if (e.date > p.last) p.last = e.date;
+    if (e.status === 'delivered') { p.delivered++; w.d++; p.revenue += num(e.sellPrice); p.profit += num(e.amount); w.profit += num(e.amount); }
+    else if (e.status === 'returned') { p.returned++; w.r++; w.loss += num(e.returnTaxe ?? S.settings.defTaxe); }
+    else { p.pending++; p.pendingProfit += num(e.amount); }
+  });
+  const taxe = num(S.settings.defTaxe), target = num(S.settings.targetEV);
+  return [...map.values()].map(p => {
+    const dec = p.delivered + p.returned, rate = dec ? p.delivered / dec : null, avg = p.delivered ? p.profit / p.delivered : 0;
+    const net = p.profit - p.returnLoss, perShip = dec ? net / dec : null, be = avg > 0 ? taxe / (avg + taxe) : 1;
+    let decision = 'new';
+    if (dec >= 5) decision = perShip <= 0 ? 'stop' : (rate - be >= 0.15 && perShip >= target * 0.6 ? 'scale' : 'watch');
+    // ما يلزم لتحقيق الهدف: فائدة لكل مُسلَّمة P* = (هدف + (1−r)·T) / r — أو نسبة تسليم r* = (هدف + T) / (P + T)
+    const needP = rate ? (target + (1 - rate) * taxe) / rate : null, needR = avg > 0 ? (target + taxe) / (avg + taxe) : null;
+    return { ...p, dec, rate, avg, net, perShip, be, decision, needP, needR, margin: p.revenue ? p.profit / p.revenue : null };
+  }).sort((a, b) => b.net - a.net || b.orders - a.orders);
+}
+const NOTE_CLS = { neg: 'bad', wait: 'warn', good: 'good', info: '' };
+const DECISION = { scale: ['pos', 'وسِّع', 'مربح وثابت — زد الإعلان والكمية'], watch: ['wait', 'راقب', 'مربح لكن الهامش أو التسليم ضعيف'], stop: ['neg', 'أوقف أو أعد التسعير', 'كل طرد مُرسَل يخسر في المتوسط'], new: ['info', 'بيانات قليلة', 'أقل من 5 طلبيات محسومة'] };
+const rateBar = (r, be) => r == null ? '<span class="muted">—</span>' : `<span class="rbar" title="تسليم ${Math.round(r * 100)}%"><i style="width:${Math.round(r * 100)}%;background:${be != null && r < be ? 'var(--loss)' : r - (be || 0) < 0.15 ? 'var(--wait)' : 'var(--profit)'}"></i>${be != null && be < 1 ? `<s style="inset-inline-start:${Math.round(be * 100)}%"></s>` : ''}</span><b class="n" style="font-size:12.5px">${Math.round(r * 100)}%</b>`;
+function viewProducts() {
+  const range = periodRange(ui.rPeriod), list = buildProductStats(range);
+  const head = `<div class="chips">${R_PERIODS.map(([k, l]) => `<button class="chip" data-act="r-period" data-v="${k}" aria-pressed="${ui.rPeriod === k}">${l}</button>`).join('')}</div>`;
+  if (!list.length) return head + `<div class="card empty">${ic('box', 32)}<b>لا طلبيات في هذه الفترة</b>تُبنى الإحصائيات من الطلبيات واسم المنتج فيها.</div>`;
+  const totNet = sum(list, p => p.net), best = list[0], stop = list.filter(p => p.decision === 'stop');
+  return head + `<div class="note ${stop.length ? 'warn' : 'good'}" style="margin-bottom:12px">${ic(stop.length ? 'alert' : 'check', 18)}<div>${list.length} منتج • صافي ${moneyT(totNet)}. الأربح: <b>${esc(best.name.slice(0, 50))}</b> (${moneyT(best.net)})${stop.length ? `. <b>${stop.length}</b> منتج يخسر لكل طرد مُرسَل — راجع سعره أو أوقفه.` : '.'}</div></div>
+  <div class="card list">${list.map(p => { const [tone, lbl] = DECISION[p.decision]; return `<button class="oc" data-act="prod-open" data-k="${esc(p.key)}"><span class="main">
+    <span class="t">${esc(p.name)}</span><span class="s"><span>${p.orders} طلبية</span><span>${p.delivered} مُسلَّمة</span>${p.returned ? `<span class="neg">${p.returned} مرتجعة</span>` : ''}${p.pending ? `<span class="wait">${p.pending} في الطريق</span>` : ''}</span>
+    <span class="bd"><span class="badge ${tone}">${lbl}</span>${rateBar(p.rate, p.be)}</span></span>
+    <span class="amt ${p.net >= 0 ? 'pos' : 'neg'}">${money(p.net)}<small>${p.perShip != null ? `${fmtNum(p.perShip)} / طرد مُرسَل` : 'صافي'}</small></span></button>`; }).join('')}</div>
+  <div class="sub" style="margin-top:10px">«لكل طرد مُرسَل» = (الفائدة − خسائر المرتجع) ÷ الطرود المحسومة: أصدق مقياس لربحية المنتج لأنه يحسب المرتجعات. الخط في شريط التسليم = نقطة التعادل.</div>`;
+}
+function openProduct(key) {
+  const p = buildProductStats(periodRange(ui.rPeriod)).find(x => x.key === key); if (!p) return;
+  const [tone, lbl, why] = DECISION[p.decision], taxe = num(S.settings.defTaxe), target = num(S.settings.targetEV);
+  const ws = Object.entries(p.w).map(([wid, x]) => ({ wid: +wid, ...x, dec: x.d + x.r, rate: x.d + x.r ? x.d / (x.d + x.r) : null })).sort((a, b) => b.o - a.o);
+  const mx = Math.max(1, ...ws.map(x => x.o));
+  const bad = ws.filter(x => x.dec >= 3 && x.rate < p.be), good = ws.filter(x => x.dec >= 3 && x.rate >= Math.max(0.8, p.be + 0.2));
+  const tips = [];
+  if (p.decision === 'stop' && p.needP) tips.push(['neg', `ليصبح كل طرد مُرسَل مربحاً بـ ${moneyT(target)} تحتاج فائدة ${moneyT(p.needP)} لكل طلبية مُسلَّمة (الآن ${moneyT(p.avg)}) — أي رفع السعر بنحو ${moneyT(Math.max(0, p.needP - p.avg))}.`]);
+  else if (p.needP && p.needP > p.avg && p.dec >= 5) tips.push(['wait', `لبلوغ هدف ${moneyT(target)} لكل طرد مُرسَل: ارفع الفائدة إلى ${moneyT(p.needP)} أو حسّن التسليم إلى ${Math.round(Math.min(1, p.needR || 1) * 100)}%.`]);
+  if (bad.length) tips.push(['neg', `ولايات تسليمها تحت نقطة التعادل (${Math.round(p.be * 100)}%): ${bad.map(x => AR_W[x.wid] || 'غير معروفة').join('، ')} — أكّد هاتفياً قبل الإرسال أو اطلب عربوناً.`]);
+  if (good.length) tips.push(['good', `أفضل الولايات: ${good.slice(0, 4).map(x => `${AR_W[x.wid]} (${Math.round(x.rate * 100)}%)`).join('، ')} — وجّه إعلاناتك إليها.`]);
+  if (p.margin != null && p.margin < 0.03 && p.delivered >= 3) tips.push(['wait', `هامشك ${(p.margin * 100).toFixed(1)}% من سعر البيع فقط — أي تغيير صغير في التوصيل أو المرتجع يمحو الربح.`]);
+  const body = `<div class="row" style="gap:8px;margin-bottom:12px"><span class="badge ${tone}">${lbl}</span><span class="sub">${why}</span></div>
+    <div class="kpis"><div class="card kpi"><div class="t">صافي (بعد المرتجعات)</div><div class="v ${p.net >= 0 ? 'pos' : 'neg'}">${money(p.net)}</div></div>
+      <div class="card kpi"><div class="t">لكل طرد مُرسَل</div><div class="v ${p.perShip == null ? '' : p.perShip > 0 ? 'pos' : 'neg'}">${p.perShip == null ? '—' : money(p.perShip)}</div></div>
+      <div class="card kpi"><div class="t">نسبة التسليم / التعادل</div><div class="v">${p.rate == null ? '—' : Math.round(p.rate * 100) + '%'} <small class="muted" style="font-size:13px">/ ${Math.round(p.be * 100)}%</small></div></div>
+      <div class="card kpi"><div class="t">متوسط الفائدة / مُسلَّمة</div><div class="v">${money(p.avg)}</div></div></div>
+    <div class="card pad-s" style="margin-top:12px"><div class="kv"><span>طلبيات • قطع</span><b class="n">${p.orders} • ${p.units}</b></div><div class="kv"><span>رقم الأعمال (مُسلَّمة)</span><b>${money(p.revenue)}</b></div>
+      <div class="kv"><span>الفائدة المحققة</span><b class="pos">${money(p.profit)}</b></div><div class="kv"><span>خسائر المرتجع (Taxe)</span><b class="neg">${money(p.returnLoss)}</b></div>
+      ${p.pending ? `<div class="kv"><span>في الطريق (${p.pending})</span><b class="wait">${money(p.pendingProfit)}</b></div>` : ''}<div class="kv"><span>الهامش من سعر البيع</span><b>${p.margin == null ? '—' : (p.margin * 100).toFixed(1) + '%'}</b></div></div>
+    ${tips.length ? `<div class="stack" style="margin-top:12px">${tips.map(([t, m]) => `<div class="note ${NOTE_CLS[t] || ''}">${ic(t === 'good' ? 'check' : 'alert', 18)}<div>${m}</div></div>`).join('')}</div>` : ''}
+    <div class="sec">الولايات (${ws.length})</div>
+    <div class="card pad-s"><table class="wt"><thead><tr><th>الولاية</th><th>الطلبيات</th><th class="n">تسليم</th><th class="n">الصافي</th></tr></thead><tbody>
+      ${ws.map(x => `<tr><td>${x.wid ? esc(wLabel(x.wid)) : '<span class="muted">غير معروفة</span>'}</td><td style="min-width:90px"><span class="hbar"><i style="width:${Math.round(x.o / mx * 100)}%"></i></span><span class="n">${x.o}</span></td>
+        <td class="n">${x.rate == null ? '<span class="muted">—</span>' : `<span class="${x.dec >= 3 && x.rate < p.be ? 'neg' : ''}">${Math.round(x.rate * 100)}%</span> <small class="muted">(${x.dec})</small>`}</td><td class="n ${x.profit - x.loss >= 0 ? '' : 'neg'}">${fmtNum(x.profit - x.loss)}</td></tr>`).join('')}
+    </tbody></table></div>`;
+  Sheet.open({ title: p.name.slice(0, 60), body, footer: `<button class="btn sec2 grow" data-act="prod-calc" data-k="${esc(p.key)}">${ic('calc', 18)}<span>افتح في الحاسبة</span></button>` });
+}
+function viewWilayas() {
+  const range = periodRange(ui.rPeriod), m = {}, byId = new Map(S.entries.map(e => [e.id, e]));
+  S.entries.forEach(e => {
+    if (!inRange(e, range)) return;
+    if (e.type === 'return') { const o = byId.get(e.linkedOrderId); if (o) { const w = wilayaOfEntry(o) || 0; (m[w] = m[w] || { o: 0, d: 0, r: 0, profit: 0, loss: 0, prods: {} }).loss += num(e.amount); } return; }
+    if (!isOrder(e)) return;
+    const w = wilayaOfEntry(e) || 0, x = m[w] || (m[w] = { o: 0, d: 0, r: 0, profit: 0, loss: 0, prods: {} });
+    x.o++; const pn = productOf(e); x.prods[pn] = (x.prods[pn] || 0) + 1;
+    if (e.status === 'delivered') { x.d++; x.profit += num(e.amount); } else if (e.status === 'returned') x.r++;
+  });
+  const sortBy = ui.wSort || 'o';
+  const rows = Object.entries(m).map(([w, x]) => ({ wid: +w, ...x, dec: x.d + x.r, rate: x.d + x.r ? x.d / (x.d + x.r) : null, net: x.profit - x.loss }))
+    .sort((a, b) => sortBy === 'net' ? b.net - a.net : sortBy === 'rate' ? ((b.rate ?? -1) - (a.rate ?? -1)) || b.o - a.o : b.o - a.o);
+  const mx = Math.max(1, ...rows.map(x => x.o)), total = sum(rows, x => x.o);
+  const head = `<div class="chips">${R_PERIODS.map(([k, l]) => `<button class="chip" data-act="r-period" data-v="${k}" aria-pressed="${ui.rPeriod === k}">${l}</button>`).join('')}</div>`;
+  if (!rows.length) return head + `<div class="card empty">${ic('truck', 32)}<b>لا طلبيات في هذه الفترة</b></div>`;
+  const top3 = rows.slice().sort((a, b) => b.o - a.o).slice(0, 3), share = sum(top3, x => x.o) / total;
+  const loss = rows.filter(x => x.dec >= 3 && x.net < 0);
+  return head + `<div class="note" style="margin-bottom:12px">${ic('info', 18)}<div>${rows.length} ولاية • ${total} طلبية. أكبر 3 ولايات = <b>${Math.round(share * 100)}%</b> من طلبياتك${share > 0.6 ? ' (تركّز عالٍ: أي مشكلة توصيل فيها تضرب أرباحك)' : ''}.${loss.length ? ` <b class="neg">${loss.length}</b> ولاية بصافٍ سالب.` : ''}</div></div>
+  <div class="seg" style="padding:0 0 10px">${[['o', 'الأكثر طلبيات'], ['net', 'الأربح'], ['rate', 'أعلى تسليم']].map(([k, l]) => `<button data-act="w-sort" data-v="${k}" aria-pressed="${sortBy === k}">${l}</button>`).join('')}</div>
+  <div class="card list">${rows.map(x => { const tp = Object.entries(x.prods).sort((a, b) => b[1] - a[1])[0]; return `<div class="pad-s"><div class="row"><b class="grow" style="font-size:14px">${x.wid ? esc(wLabel(x.wid)) : '<span class="muted">ولاية غير معروفة</span>'}</b><b class="${x.net >= 0 ? 'pos' : 'neg'}">${money(x.net)}</b></div>
+    <div class="row" style="margin-top:6px;gap:10px"><span class="hbar grow"><i style="width:${Math.round(x.o / mx * 100)}%"></i></span><span class="sub n" style="min-width:64px;text-align:end">${x.o} طلبية</span></div>
+    <div class="sub" style="margin-top:4px">${x.rate == null ? 'لا طلبيات محسومة' : `تسليم <b class="${x.rate < 0.6 ? 'neg' : ''}">${Math.round(x.rate * 100)}%</b> (${x.d}/${x.dec})`}${tp ? ` • الأكثر: ${esc(tp[0].slice(0, 40))}` : ''}</div></div>`; }).join('')}</div>`;
+}
+/* ---- مؤشرات مالية: المال في الطريق، توقع نهاية الشهر، هدف الشهر، اقتصاديات الطلبية ---- */
+function financeHTML() {
+  const pend = S.entries.filter(Q.pending), taxe = num(S.settings.defTaxe);
+  const cod = sum(pend.filter(e => cleanTrack(e.tracking)), e => e.ship?.price || ((e.sellPrice || 0) + (e.ship?.fvFee || 0)));
+  const ev = sum(pend, e => { const r = deliveryRate(wilayaOfEntry(e)).rate; return r * num(e.amount) - (1 - r) * taxe; });
+  const t = new Date(), dim = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate(), day = t.getDate();
+  const mst = computeStats(S.entries.filter(e => inRange(e, periodRange('month'))));
+  const proj = day >= 3 ? mst.net / day * dim : null, goal = num(S.settings.monthGoal);
+  const needPerDay = goal > 0 ? Math.max(0, goal - mst.net) / Math.max(1, dim - day) : 0;
+  const all = computeStats(S.entries.filter(e => inRange(e, periodRange('30d'))));
+  const dec = all.delivered.length + all.returned.length, perShip = dec ? (all.deliveredProfit - all.returnLoss) / dec : null;
+  return `<div class="sec">المال والتوقعات</div>
+  <div class="kpis">
+    <div class="card kpi"><div class="t">مبالغ تحصيل في الطريق</div><div class="v">${money(cod)}</div><div class="t">${pend.filter(e => cleanTrack(e.tracking)).length} طرد عند Yalidine</div></div>
+    <div class="card kpi"><div class="t">فائدة متوقعة منها</div><div class="v ${ev >= 0 ? 'pos' : 'neg'}">${money(ev)}</div><div class="t">بعد خطر المرتجع لكل ولاية</div></div>
+    <div class="card kpi"><div class="t">توقّع نهاية ${MONTHS[t.getMonth()]}</div><div class="v">${proj == null ? '—' : money(proj)}</div><div class="t">بمعدل ${money(day ? mst.net / day : 0)} يومياً</div></div>
+    <div class="card kpi"><div class="t">لكل طرد مُرسَل (30 يوماً)</div><div class="v ${perShip == null ? '' : perShip > 0 ? 'pos' : 'neg'}">${perShip == null ? '—' : money(perShip)}</div><div class="t">بعد المرتجعات</div></div>
+  </div>
+  <div class="card pad" style="margin-top:10px">${goal > 0 ? `<div class="row" style="justify-content:space-between;font-weight:600;font-size:14px;margin-bottom:8px"><span>هدف ${MONTHS[t.getMonth()]}: ${moneyT(goal)}</span><span class="${mst.net >= goal ? 'pos' : ''}">${Math.round(Math.max(0, mst.net) / goal * 100)}%</span></div>
+    <div class="progress"><i class="${mst.net >= goal ? '' : proj != null && proj < goal ? 'hot' : ''}" style="width:${Math.min(100, Math.max(0, mst.net) / goal * 100)}%"></i></div>
+    <div class="sub" style="margin-top:8px">${mst.net >= goal ? 'بلغت هدف الشهر ✓' : `يلزمك ${moneyT(needPerDay)} صافياً يومياً في ${dim - day} يوماً المتبقية${perShip > 0 ? ` ≈ ${Math.ceil(needPerDay / perShip)} طرد مُرسَل يومياً` : ''}.`}</div>`
+    : `<div class="row"><div class="grow"><b>هدف الشهر</b><div class="sub">حدّد هدفاً صافياً لترى كم طرداً تحتاج يومياً لبلوغه.</div></div></div>`}
+    <label class="field" style="margin:10px 0 0"><span>الهدف الصافي للشهر (دج)</span><input type="number" inputmode="decimal" data-bind="settings.monthGoal" data-num data-render-change value="${goal || ''}" placeholder="مثلاً 100000"></label></div>`;
+}
+
 const R_PERIODS = [['month','هذا الشهر'], ['lastm','الشهر الماضي'], ['30d','30 يوماً'], ['7d','7 أيام'], ['all','الكل']];
 function reportText(range) {
   const st = computeStats(S.entries.filter(e => inRange(e, range)));
@@ -2013,10 +2212,12 @@ function viewSummary() {
     <div class="card kpi"><div class="t">الفائدة المحققة</div><div class="v pos">${money(st.deliveredProfit)}</div></div>
     <div class="card kpi"><div class="t">إجمالي المصاريف</div><div class="v neg">${money(cost)}</div></div>
     <div class="card kpi"><div class="t">صافي الفائدة</div><div class="v ${st.net >= 0 ? 'pos' : 'neg'}">${money(st.net)}</div></div>
-    <div class="card kpi"><div class="t">الهامش</div><div class="v">${st.deliveredProfit > 0 ? Math.round(margin) + '%' : '—'}</div></div></div>
+    <div class="card kpi"><div class="t">يبقى من الفائدة بعد المصاريف</div><div class="v">${st.deliveredProfit > 0 ? Math.round(margin) + '%' : '—'}</div></div></div>
+  ${financeHTML()}
+  ${weekChartHTML()}
   <div class="sec">توزيع المصاريف</div>
   <div class="card pad-s"><div class="kv"><span>مصاريف شخصية</span><b>${money(st.expenses)}</b></div><div class="kv"><span>مرتجعات (Taxe retour)</span><b>${money(st.returnLoss)}</b></div>${adsShown ? `<div class="kv"><span>إعلانات</span><b>${money(st.ads)}</b></div>` : ''}<div class="kv tot"><span>المجموع</span><b>${money(cost)}</b></div></div>
-  ${ins.length ? `<div class="sec">ملاحظات</div><div class="stack">${ins.map(([t, m]) => `<div class="note ${t === 'info' ? '' : t}">${ic(t === 'neg' || t === 'wait' ? 'alert' : t === 'good' ? 'check' : 'info', 18)}<div>${m}</div></div>`).join('')}</div>` : ''}
+  ${ins.length ? `<div class="sec">ملاحظات</div><div class="stack">${ins.map(([t, m]) => `<div class="note ${NOTE_CLS[t] || ''}">${ic(t === 'neg' || t === 'wait' ? 'alert' : t === 'good' ? 'check' : 'info', 18)}<div>${m}</div></div>`).join('')}</div>` : ''}
   ${months.length ? `<div class="sec">آخر الأشهر</div><div class="card list">${months.map(m => `<div class="pad-s row"><div class="grow"><b>${m.l}</b><div class="sub">${m.s.delivered.length} مُسلَّمة • ${m.s.returned.length} مرتجعة • ${m.s.orders.length} طلبية</div></div><b class="${m.s.net >= 0 ? 'pos' : 'neg'}">${money(m.s.net)}</b></div>`).join('')}</div>` : ''}
   <div class="sec">تصدير</div><div class="row wrap-r"><button class="btn sec2 grow" data-act="report-copy">${ic('copy', 18)}<span>نسخ تقرير نصي</span></button><button class="btn sec2 grow" data-act="export-xlsx">${ic('download', 18)}<span>Excel</span></button></div>`;
 }
@@ -2065,10 +2266,10 @@ function viewAssistant() {
   <div class="card pad-s"><div class="chat" id="chatBox">${ui.chat.length ? ui.chat.map(m => `<div class="msg ${m.r}">${esc(m.t)}</div>`).join('') : '<div class="sub" style="padding:8px">اسأل بالدارجة عن أرقامك وسأحلّلها.</div>'}</div>
     <div class="row" style="margin-top:10px"><input type="text" id="chatIn" placeholder="اكتب سؤالك…" class="grow"><button class="btn" data-act="chat-send" aria-label="إرسال">${ic('chev', 18)}</button></div></div></div>`;
 }
-const R_TABS = () => [['summary', 'الملخص'], ['customers', 'العملاء'], ['budget', 'الميزانية'], ...(S.settings.adsPaused ? [] : [['ads', 'الإعلانات']]), ['assistant', 'المساعد']];
+const R_TABS = () => [['summary', 'الملخص'], ['products', 'المنتجات'], ['wilayas', 'الولايات'], ['customers', 'العملاء'], ['budget', 'الميزانية'], ...(S.settings.adsPaused ? [] : [['ads', 'الإعلانات']]), ['assistant', 'المساعد']];
 function viewReports() {
   if (!R_TABS().some(([k]) => k === ui.rTab)) ui.rTab = 'summary';
-  const body = { summary: viewSummary, customers: viewCustomers, budget: viewBudget, ads: viewAds, assistant: viewAssistant }[ui.rTab]();
+  const body = { summary: viewSummary, products: viewProducts, wilayas: viewWilayas, customers: viewCustomers, budget: viewBudget, ads: viewAds, assistant: viewAssistant }[ui.rTab]();
   return `<div class="seg" role="tablist">${R_TABS().map(([k, l]) => `<button role="tab" data-act="r-tab" data-v="${k}" aria-pressed="${ui.rTab === k}">${l}</button>`).join('')}</div>${body}`;
 }
 
@@ -2082,8 +2283,8 @@ function feesSection() {
       ? `<div class="note good">${ic('check', 18)}<div>تحقّقتُ من <b>${cal.n}</b> طلبية مؤكدة: Net الحقيقي يطابق هذا الحساب (فرق وسيط ${moneyT(cal.res)}).</div></div>`
       : `<div class="note warn">${ic('alert', 18)}<div>في <b>${cal.n}</b> طلبية مؤكدة، Net الحقيقي ${cal.res < 0 ? 'أقل' : 'أكثر'} من المحسوب بـ <b>${moneyT(Math.abs(cal.res))}</b> في المتوسط${cal.res < 0 ? ' — قد يقتطع Yalidine شيئاً آخر (تأمين، وزن زائد…)' : ' — ربما سعر توصيل FreeVendor عندك أعلى من الجدول'}.
         ${cal.res < 0 ? `<div style="margin-top:8px"><button class="btn sm" data-act="fee-extra" data-v="${-cal.res}">احسب ${moneyT(-cal.res)} خصماً إضافياً لكل طلبية</button></div>` : ''}</div></div>`;
-  return `<section class="card pad" id="sec-fees"><b>الحاسبة ورسوم التوصيل</b>
-    <div class="note" style="margin:10px 0 12px">${ic('info', 18)}<div>الزبون يدفع <b>سعر توصيل FreeVendor</b> فوق سعر الزبون، وYalidine يقتطع <b>سعره هو</b> + <b>${fmtNum(num(s.codPct) * 100) / 100}%</b> من المبلغ المحصَّل عند كل تسليم ناجح. الفرق يُخصم من فائدتك.<br>
+  return setSec('sec-fees', 'calc', 'الحاسبة ورسوم التوصيل', `عمولة ${fmtNum(num(s.codPct) * 100) / 100}% • Vonder ${fmtNum(num(s.appFeePct))}% • ${cal.verdict === 'ok' ? 'مطابق لبياناتك ✓' : 'أسعار FreeVendor وYalidine'}`, `
+    <div class="note" style="margin:0 0 12px">${ic('info', 18)}<div>الزبون يدفع <b>سعر توصيل FreeVendor</b> فوق سعر الزبون، وYalidine يقتطع <b>سعره هو</b> + <b>${fmtNum(num(s.codPct) * 100) / 100}%</b> من المبلغ المحصَّل عند كل تسليم ناجح. الفرق يُخصم من فائدتك.<br>
       مثال أدرار منزل: ${fmtNum(ex.yal)} − ${fmtNum(ex.fv)} + ${fmtNum(ex.cod)} = <b>${moneyT(ex.cost)}</b> عليك.</div></div>
     ${mig && mig.n && !mig.hidden ? `<div class="note ${mig.delta >= 0 ? 'good' : 'warn'}" style="margin-bottom:12px">${ic('calc', 18)}<div>صُحِّحت فائدة <b>${mig.n}</b> طلبية بالحساب الحقيقي: مجموع فائدتها ${mig.delta >= 0 ? 'زاد' : 'نقص'} بـ <b>${moneyT(Math.abs(mig.delta))}</b>${mig.hadBuffer ? '، وأُلغيت «الحماية 400» التقريبية' : ''}.
       <div class="row" style="margin-top:8px"><button class="btn sm sec2" data-act="mig-undo">تراجع</button><button class="btn sm ghost" data-act="mig-hide">إخفاء</button></div></div></div>` : ''}
@@ -2096,26 +2297,20 @@ function feesSection() {
     <details class="acc" style="box-shadow:none"><summary style="padding:12px 14px;font-size:14px">${ic('truck', 18)}جدول الأسعار: FreeVendor مقابل Yalidine</summary><div class="inner"><div class="wt-wrap"><table class="wt">
       <thead><tr><th>الولاية</th><th class="n">منزل FV / Yal</th><th class="n">مكتب FV / Yal</th></tr></thead><tbody>
       ${WIDS.map(w => { const f = FV_FEES[w]; return `<tr><td>${esc(wLabel(w))}</td>${['home', 'desk'].map((t, i) => `<td class="n">${f ? `${fmtNum(f[i])} / ${fmtNum(feeFor(w, t))} <small class="${feeFor(w, t) - f[i] > 0 ? 'neg' : 'pos'}">(${feeFor(w, t) - f[i] > 0 ? '−' : '+'}${fmtNum(Math.abs(feeFor(w, t) - f[i]))})</small>` : '<span class="muted">غير متوفر</span>'}</td>`).join('')}</tr>`; }).join('')}
-      </tbody></table></div></div></details></section>`;
+      </tbody></table></div></div></details>`);
+}
+function setSec(id, icon, title, hint, inner) {
+  return `<details class="acc set" id="${id}" ${ui.secOpen?.[id] ? 'open' : ''}><summary><span class="ico info">${ic(icon, 18)}</span><span class="grow"><b>${title}</b>${hint ? `<small>${hint}</small>` : ''}</span></summary><div class="inner">${inner}</div></details>`;
 }
 function viewSettings() {
   const s = S.settings, jb = !!localStorage.getItem(LS.jbKey), hasKey = !!localStorage.getItem(LS.apiKey);
   const num_ = (k, l) => `<label class="field"><span>${l}</span><input type="number" inputmode="decimal" data-bind="settings.${k}" data-num value="${num(s[k])}"></label>`;
   return `<div class="stack">
-  <section class="card pad"><b>عام</b><div style="margin-top:12px"><label class="field"><span>اسم التطبيق</span><input type="text" data-bind="settings.appName" data-title value="${esc(s.appName)}" maxlength="30"></label></div>
-    <div class="sw" style="padding-top:0"><div class="tx"><b>الإعلانات موقوفة مؤقتاً</b><span>يخفي كل ما يخص الإعلانات (بطاقات، تحليل، نوع الحركة). الأرقام السابقة تبقى محسوبة.</span></div><label class="toggle"><input type="checkbox" data-bind="settings.adsPaused" data-render ${s.adsPaused ? 'checked' : ''} aria-label="إيقاف الإعلانات"><i></i></label></div></section>
-  <section class="card pad"><b>قيم الطلبية الافتراضية</b><div class="sub" style="margin:2px 0 12px">تُستعمل عند أول طلبية؛ بعدها يقترح التطبيق قيم آخر طلبية.</div>
-    <div class="two">${num_('defPrice', 'سعر المنتج')}${num_('defProfit', 'فائدتي / قطعة')}</div><div class="two">${num_('defSeller', 'فائدة البائع')}${num_('defTaxe', 'Taxe retour')}</div></section>
+  ${setSec('sec-general', 'sliders', 'عام والقيم الافتراضية', `${esc(s.appName)} • فائدتي ${fmtNum(num(s.defProfit))} • Taxe ${fmtNum(num(s.defTaxe))}`, `<div><label class="field"><span>اسم التطبيق</span><input type="text" data-bind="settings.appName" data-title value="${esc(s.appName)}" maxlength="30"></label></div>
+    <div class="sw" style="padding-top:0"><div class="tx"><b>الإعلانات موقوفة مؤقتاً</b><span>يخفي كل ما يخص الإعلانات (بطاقات، تحليل، نوع الحركة). الأرقام السابقة تبقى محسوبة.</span></div><label class="toggle"><input type="checkbox" data-bind="settings.adsPaused" data-render ${s.adsPaused ? 'checked' : ''} aria-label="إيقاف الإعلانات"><i></i></label></div><hr class="sep"><div class="sub" style="margin:2px 0 12px">تُستعمل عند أول طلبية؛ بعدها يقترح التطبيق قيم آخر طلبية.</div>
+    <div class="two">${num_('defPrice', 'سعر المنتج')}${num_('defProfit', 'فائدتي / قطعة')}</div><div class="two">${num_('defSeller', 'فائدة البائع')}${num_('defTaxe', 'Taxe retour')}</div>`)}
   ${feesSection()}
-  <section class="card pad" id="sec-cloud"><b>المزامنة بين الأجهزة</b>
-    <div class="note ${ui.cloud === 'err' ? 'bad' : ui.cloud === 'ok' ? 'good' : ''}" style="margin:10px 0">${ic('cloud', 18)}<div>${jb ? esc(ui.cloudMsg || 'مفعّلة — تُدمج التغييرات حركةً بحركة بين أجهزتك: لا يضيع تعديل جهاز بسبب جهاز آخر، وتُرفع بعد 3 ثوانٍ وتُسحب كل دقيقة ونصف.') : 'غير مفعّلة. أدخل مفتاح JSONBin ومعرّف الـBin لتعمل على الهاتف والحاسوب بنفس البيانات — بلا ضغط أزرار.'}</div></div>
-    <div class="two"><label class="field"><span>X-Master-Key</span><input type="password" class="ltr" autocomplete="off" id="jbKey" placeholder="${jb ? '•••••••• (محفوظ)' : '$2a$10$…'}"></label><label class="field"><span>Bin ID</span><input type="text" class="ltr" autocomplete="off" id="jbId" value="${esc(localStorage.getItem(LS.jbId) || '')}"></label></div>
-    <div class="row wrap-r"><button class="btn sec2 grow" data-act="cloud-save-cfg">حفظ الإعداد</button>${jb ? `<button class="btn sec2 grow" data-act="cloud-up">${ic('upload', 18)}<span>زامن الآن</span></button><button class="btn sec2 grow" data-act="cloud-down">${ic('download', 18)}<span>استبدال بنسخة السحابة</span></button>` : ''}</div>
-    <div class="note warn" style="margin-top:12px">${ic('alert', 18)}<div>بيانات العملاء (أسماء وهواتف) تُرفع إلى هذا الحساب. لا تشارك المفتاح ولا تضعه في ملف منشور على الإنترنت.</div></div></section>
-  <section class="card pad-s" id="sec-notif"><b style="display:block;padding:2px 0 6px">التنبيهات</b>
-    <div class="sw"><div class="tx"><b>تنبيه صوتي عند وصول تحديث</b><span>رنّة قصيرة عند تسليم، مرتجع، أو وصول بيانات من جهاز آخر</span></div><label class="toggle"><input type="checkbox" data-bind="settings.soundAlert" ${s.soundAlert ? 'checked' : ''} aria-label="تنبيه صوتي"><i></i></label></div>
-    <div class="sw"><div class="tx"><b>إشعار من المتصفح</b><span>يظهر حتى إذا كناش مفتوح في تبويب آخر (يحتاج إذنك مرة واحدة)</span></div><label class="toggle"><input type="checkbox" id="notifToggle" ${s.browserNotif ? 'checked' : ''} aria-label="إشعار المتصفح"><i></i></label></div></section>
-  <section class="card pad" id="sec-vonder"><b>من FreeVendor إلى Yalidine</b>
+  ${setSec('sec-vonder', 'upload', 'من FreeVendor إلى Yalidine', `${s.autoPush ? 'رفع تلقائي مفعّل' : 'رفع يدوي'} • ${Object.keys(S.catalog).length} منتج بسعر شراء`, `
     <div class="sub" style="margin:2px 0 10px">FreeVendor بلا API، فيقرأ كناش صفحة الطلبيات من متصفحك وأنت مسجّل الدخول، ثم يُنشئ الطرود عند Yalidine بالـAPI.</div>
     <ol class="sub" style="margin:0 0 10px;padding-inline-start:18px;line-height:1.9"><li>شغّل الوسيط على حاسوبك: <code class="n">node kanach-proxy.js</code> وافتح كناش من <span class="n">http://localhost:8787</span></li>
       <li>اسحب الزر التالي إلى شريط المفضلة (مرة واحدة)</li><li>في freevendor.space افتح «Gérer les commandes» واضغط الزر: تُقرأ الطلبيات «Confirmé avec le client» وتصل هنا وحدها خلال ثوانٍ</li></ol>
@@ -2128,17 +2323,32 @@ function viewSettings() {
       <div class="field"><span>أسعار الشراء</span><button class="btn sec2 block" data-act="catalog-open">${ic('box', 18)}<span>${Object.keys(S.catalog).length} منتج — تعديل</span></button></div></div>
     <details class="acc" style="box-shadow:none;margin-top:4px"><summary style="padding:12px 14px;font-size:14px">${ic('copy', 18)}بدون وسيط: لصق يدوي</summary><div class="inner">
       <label class="field"><span>الصق النص الذي نسخه الزر</span><textarea id="vonderPaste" class="ltr" rows="3" placeholder='{"kanach":"vonder",...}'></textarea></label>
-      <button class="btn block" data-act="vonder-import">استيراد الطلبيات</button></div></details></section>
-  <section class="card pad"><b>نسخ احتياطي</b><div class="sub" style="margin:2px 0 12px">الصيغة متوافقة مع نسخ النسخة القديمة.</div>
+      <button class="btn block" data-act="vonder-import">استيراد الطلبيات</button></div></details>`)}
+  ${setSec('sec-labels', 'box', 'ملصقات الشحن', s.labelFormat === 'a4' ? 'A4 — 4 ملصقات في الورقة' : 'طابعة حرارية 10×15 سم', `
+    <div class="field"><span>حجم الطباعة</span><div class="seg" style="padding:0">${[['thermal', '10×15 سم (حرارية)'], ['a4', 'A4 — 4 في الورقة']].map(([k, l]) => `<button data-act="set-lblfmt" data-v="${k}" aria-pressed="${(s.labelFormat || 'thermal') === k}">${l}</button>`).join('')}</div></div>
+    <div class="two"><label class="field"><span>اسم المرسل على الملصق</span><input type="text" data-bind="settings.labelSender" value="${esc(s.labelSender || '')}" placeholder="${esc(s.appName || 'كناش')}"></label>
+    <label class="field"><span>هاتف المرسل (اختياري)</span><input type="tel" class="ltr" data-bind="settings.labelPhone" value="${esc(s.labelPhone || '')}"></label></div>
+    <button class="btn sec2 block" data-act="labels-open">${ic('download', 18)}<span>فتح الملصقات (${labelQueue().length} لم تُطبع)</span></button>`)}
+  ${setSec('sec-goals', 'chart', 'الأهداف المالية', `هدف الشهر ${num(s.monthGoal) ? moneyT(num(s.monthGoal)) : 'غير محدد'} • ${moneyT(num(s.targetEV))} لكل طرد`, `
+    <div class="two"><label class="field"><span>الهدف الصافي للشهر (دج)</span><input type="number" inputmode="decimal" data-bind="settings.monthGoal" data-num value="${num(s.monthGoal) || ''}" placeholder="100000"></label>
+    <label class="field"><span>ربح مستهدف لكل طرد مُرسَل (دج)</span><input type="number" inputmode="decimal" data-bind="settings.targetEV" data-num value="${num(s.targetEV)}"><small>يُستعمل لتقييم المنتجات واقتراح الأسعار.</small></label></div>`)}
+  ${setSec('sec-cloud', 'cloud', 'المزامنة بين الأجهزة', jb ? (ui.cloud === 'err' ? 'خطأ في المزامنة' : 'مفعّلة') : 'غير مفعّلة', `
+    <div class="note ${ui.cloud === 'err' ? 'bad' : ui.cloud === 'ok' ? 'good' : ''}" style="margin:10px 0">${ic('cloud', 18)}<div>${jb ? esc(ui.cloudMsg || 'مفعّلة — تُدمج التغييرات حركةً بحركة بين أجهزتك: لا يضيع تعديل جهاز بسبب جهاز آخر، وتُرفع بعد 3 ثوانٍ وتُسحب كل دقيقة ونصف.') : 'غير مفعّلة. أدخل مفتاح JSONBin ومعرّف الـBin لتعمل على الهاتف والحاسوب بنفس البيانات — بلا ضغط أزرار.'}</div></div>
+    <div class="two"><label class="field"><span>X-Master-Key</span><input type="password" class="ltr" autocomplete="off" id="jbKey" placeholder="${jb ? '•••••••• (محفوظ)' : '$2a$10$…'}"></label><label class="field"><span>Bin ID</span><input type="text" class="ltr" autocomplete="off" id="jbId" value="${esc(localStorage.getItem(LS.jbId) || '')}"></label></div>
+    <div class="row wrap-r"><button class="btn sec2 grow" data-act="cloud-save-cfg">حفظ الإعداد</button>${jb ? `<button class="btn sec2 grow" data-act="cloud-up">${ic('upload', 18)}<span>زامن الآن</span></button><button class="btn sec2 grow" data-act="cloud-down">${ic('download', 18)}<span>استبدال بنسخة السحابة</span></button>` : ''}</div>
+    <div class="note warn" style="margin-top:12px">${ic('alert', 18)}<div>بيانات العملاء (أسماء وهواتف) تُرفع إلى هذا الحساب. لا تشارك المفتاح ولا تضعه في ملف منشور على الإنترنت.</div></div>`)}
+  ${setSec('sec-notif', 'bolt', 'التنبيهات', [s.soundAlert ? 'صوت' : '', s.browserNotif ? 'إشعارات' : ''].filter(Boolean).join(' + ') || 'متوقفة', `
+    <div class="sw"><div class="tx"><b>تنبيه صوتي عند وصول تحديث</b><span>رنّة قصيرة عند تسليم، مرتجع، أو وصول بيانات من جهاز آخر</span></div><label class="toggle"><input type="checkbox" data-bind="settings.soundAlert" ${s.soundAlert ? 'checked' : ''} aria-label="تنبيه صوتي"><i></i></label></div>
+    <div class="sw"><div class="tx"><b>إشعار من المتصفح</b><span>يظهر حتى إذا كناش مفتوح في تبويب آخر (يحتاج إذنك مرة واحدة)</span></div><label class="toggle"><input type="checkbox" id="notifToggle" ${s.browserNotif ? 'checked' : ''} aria-label="إشعار المتصفح"><i></i></label></div>`)}
+  ${setSec('sec-backup', 'download', 'نسخ احتياطي', `${S.entries.length} حركة على هذا الجهاز`, `<div class="sub" style="margin:2px 0 12px">الصيغة متوافقة مع نسخ النسخة القديمة.</div>
     <div class="row wrap-r"><button class="btn sec2 grow" data-act="backup">${ic('download', 18)}<span>تحميل نسخة (JSON)</span></button><button class="btn sec2 grow" data-act="restore">${ic('upload', 18)}<span>استعادة من ملف</span></button></div><input type="file" id="restoreFile" accept=".json,application/json" hidden>
-    <div class="sub" style="margin-top:10px">${S.entries.length} حركة محفوظة على هذا الجهاز.</div></section>
-  <section class="card pad" id="sec-assistant"><b>المساعد الذكي (Claude)</b><div class="sub" style="margin:2px 0 12px">اختياري. المفتاح يبقى على جهازك ويُرسل إلى Anthropic فقط.</div>
+    <div class="sub" style="margin-top:10px">${S.entries.length} حركة محفوظة على هذا الجهاز.</div>`)}
+  ${setSec('sec-assistant', 'chat', 'المساعد الذكي (Claude)', hasKey ? 'مفعّل' : 'اختياري', `<div class="sub" style="margin:2px 0 12px">اختياري. المفتاح يبقى على جهازك ويُرسل إلى Anthropic فقط.</div>
     <label class="field"><span>Claude API key</span><input type="password" class="ltr" autocomplete="off" id="apiKeyIn" placeholder="${hasKey ? '•••••••• (محفوظ)' : 'sk-ant-…'}"></label>
-    <div class="row"><button class="btn sec2 grow" data-act="apikey-save">حفظ المفتاح</button>${hasKey ? '<button class="btn danger-o" data-act="apikey-del">حذف</button>' : ''}</div></section>
-  <section class="card pad"><b style="color:var(--loss)">منطقة الخطر</b><div class="row wrap-r" style="margin-top:12px"><button class="btn danger-o grow" data-act="clear-month">مسح شهر</button><button class="btn danger-o grow" data-act="clear-all">حذف كل البيانات</button></div></section>
+    <div class="row"><button class="btn sec2 grow" data-act="apikey-save">حفظ المفتاح</button>${hasKey ? '<button class="btn danger-o" data-act="apikey-del">حذف</button>' : ''}</div>`)}
+  ${setSec('sec-danger', 'trash', 'منطقة الخطر', 'مسح شهر أو كل البيانات', `<div class="row wrap-r" ><button class="btn danger-o grow" data-act="clear-month">مسح شهر</button><button class="btn danger-o grow" data-act="clear-all">حذف كل البيانات</button></div>`)}
   </div>`;
 }
-
 const VIEWS = { home: viewHome, orders: viewOrders, calc: viewCalc, carrier: viewCarrier, reports: viewReports, settings: viewSettings };
 const AFTER = {
   calc() { $$('[data-c]').forEach(el => { el[el.tagName === 'SELECT' ? 'onchange' : 'oninput'] = () => { calcState()[el.dataset.c] = el.value; calcRefresh(); }; }); },
@@ -2152,6 +2362,7 @@ const AFTER = {
   },
   carrier() { const d = $('#setupAcc'); if (d) d.ontoggle = () => { ui.openSetup = d.open; }; },
   settings() {
+    $$('details.set').forEach(d => { d.ontoggle = () => { (ui.secOpen = ui.secOpen || {})[d.id] = d.open; }; });
     const bm = $('#vonderBm'); if (bm) bm.setAttribute('href', fvBookmarklet());
     const nt = $('#notifToggle');
     if (nt) nt.onchange = async e => {
@@ -2342,7 +2553,7 @@ function entryBody(e) {
     ${c?.checkedAt ? `<div class="sub" style="margin-top:8px">آخر فحص: ${timeAgo(c.checkedAt)}${c?.payment ? ' • الدفع: ' + esc(c.payment) : ''}</div>` : ''}</div>`;
   if (c?.priceMismatch) h += `<div class="note warn" style="margin-bottom:12px">${ic('alert', 18)}<div>مبلغ Yalidine (<b>${moneyT(c.price)}</b>) يختلف عن سعر الزبون المسجَّل (<b>${moneyT(e.sellPrice)}</b>).</div></div>`;
   h += `<div class="card pad" style="margin-bottom:12px"><div class="field" style="margin-bottom:0"><span>رقم التتبع</span>${cleanTrack(e.tracking)
-    ? `<div class="row"><span class="trk grow" style="font-size:14px">${esc(e.tracking)}</span><button class="btn sec2 sm" data-act="copy" data-v="${esc(e.tracking)}">${ic('copy', 16)}نسخ</button>${Carrier.configured() ? `<button class="btn sec2 sm" data-act="entry-history" data-id="${esc(e.id)}">السجل</button>` : ''}</div>`
+    ? `<div class="row wrap-r"><span class="trk grow" style="font-size:14px">${esc(e.tracking)}</span><button class="btn sec2 sm" data-act="copy" data-v="${esc(e.tracking)}">${ic('copy', 16)}نسخ</button><button class="btn sec2 sm" data-act="entry-label" data-id="${esc(e.id)}">${ic('download', 16)}ملصق</button>${labelLink(e) ? `<a class="btn sec2 sm" href="${esc(labelLink(e))}" target="_blank" rel="noopener">بوردرو ↗</a>` : ''}${Carrier.configured() ? `<button class="btn sec2 sm" data-act="entry-history" data-id="${esc(e.id)}">السجل</button>` : ''}</div>`
     : `<div class="row"><input type="text" class="ltr grow" id="trkIn" placeholder="yal-…" autocapitalize="off"><button class="btn sm" data-act="entry-track-save" data-id="${esc(e.id)}">حفظ</button></div>`}</div><div id="histBox"></div></div>`;
   if (y?.clientName || y?.phone || y?.wilaya) h += `<div class="card pad" style="margin-bottom:12px"><div class="row"><div class="grow"><b>${esc(y.clientName || e.desc)}</b><div class="sub">${[y.wilaya, y.commune].filter(Boolean).map(esc).join(' • ')}</div></div>${y.phone ? `<a class="iconbtn" href="tel:${esc(y.phone)}" aria-label="اتصال">${ic('phone')}</a><a class="iconbtn" href="${waLink(y.phone)}" target="_blank" rel="noopener" aria-label="واتساب">${ic('chat')}</a>` : ''}</div></div>`;
   if (e.type === 'vonder') {
@@ -2398,6 +2609,15 @@ const A = {
     Object.assign(F, { price: Math.round(x.price * 100) / 100, qty: x.qty, myProfit: Math.round(x.mpPiece), seller: x.seller, extra: x.extra, wid: c.wid, shipType: c.type });
     $('#sheetBody').innerHTML = formBody(); updateForm(); },
   'call-open': () => openCallList(),
+  'labels-open': () => openLabels(),
+  'set-lblfmt': (d) => { S.settings.labelFormat = d.v; saveSettings(); render(); },
+  'lbl-fmt': (d) => { S.settings.labelFormat = d.v; saveSettings(); openLabels(); },
+  'lbl-print': () => { const ids = new Set($$('[data-lbl]').filter(x => x.checked).map(x => x.dataset.lbl)); const list = S.entries.filter(e => ids.has(e.id)); if (!list.length) { toast('حدّد طرداً واحداً على الأقل.'); return; } Sheet.close(); printLabels(list); },
+  'entry-label': (d) => { const e = S.entries.find(x => sameId(x.id, d.id)); if (e) printLabels([e]); },
+  'prod-open': (d) => openProduct(d.k),
+  'prod-calc': (d) => { const p = buildProductStats(periodRange(ui.rPeriod)).find(x => x.key === d.k); const e = p && S.entries.find(x => isOrder(x) && prodKey(productOf(x)) === d.k && x.type === 'vonder');
+    Sheet.close(); if (e) { const c = calcState(); Object.assign(c, { mode: 'fwd', price: Math.round(e.productPrice), qty: e.quantity || 1, myProfit: Math.round(e.myProfit), seller: e.sellerProfit || 0 }); } go('calc'); },
+  'w-sort': (d) => { ui.wSort = d.v; render(); },
   'call-done': (d) => { const e = S.entries.find(x => sameId(x.id, d.id)); if (!e) return; e.calledOn = todayISO(); persist(); openCallList(); render(); },
   'fee-extra': (d) => { S.carrier.extraFixed = Math.max(0, num(d.v)); saveCarrier(); render(); toast('سيُخصم من تقدير Net كل طلبية ' + moneyT(num(d.v))); },
   'mig-undo': async (d) => { const m = readJSON('kanach_mig5', null); if (!m) return; const r = await ask({ title: 'التراجع عن التصحيح؟', body: `ستعود فائدة ${m.n} طلبية إلى قيمها السابقة.`, ok: 'تراجع' }); if (!r.ok) return;
@@ -2536,7 +2756,7 @@ document.addEventListener('input', e => {
     if (t.dataset.recalc) { clearTimeout(recalcT); recalcT = setTimeout(() => { if (recomputePending()) persist(); }, 400); }
   }
 });
-document.addEventListener('change', e => { if (e.target.dataset && e.target.dataset.pf) { pushChange(e.target); return; } });
+document.addEventListener('change', e => { if (e.target.dataset && e.target.dataset.pf) { pushChange(e.target); return; } if (e.target.dataset?.renderChange !== undefined) render(); });
 document.addEventListener('input', e => { if (e.target.dataset && e.target.dataset.pf === 'addr' && PUSH) pushChange(e.target); });
 document.addEventListener('change', e => { if (e.target.id === 'yalFile') handleYalFile(e.target.files[0]); if (e.target.id === 'restoreFile') handleRestore(e.target.files[0]); });
 

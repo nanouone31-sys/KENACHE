@@ -240,6 +240,41 @@ const eq = (name, got, want) => {
       eq('أرقام التتبع حُفظت', await page.evaluate(() => S.entries.map(e => e.tracking).sort()), ['yal-T000585888', 'yal-T000585899']);
       await page.unroute(/\/(wilayas|communes|centers|parcels)\//);
     }
+
+    // ---- الباركود: مطابق حرفياً لمرجع python-barcode (Code 128-B) ----
+    const BC_REF = {"yal-XD79UM": "1101001000011011011110100101100001100101000010011011100111000101101011000100011101101110111001011001101110111010111011000110011100101100011101011", "yal-T000585899": "110100100001101101111010010110000110010100001001101110011011100010100111011001001110110010011101100110111001001110100110011011100100111010011001110010110011100101100110001000101100011101011", "YAL-ABC123": "1101001000011101101000101000110001000110111010011011100101000110001000101100010001000110100111001101100111001011001011100100110100001100011101011"};
+    eq('Code 128 مطابق للمرجع', await page.evaluate(ref => Object.keys(ref).map(t => code128Bits(t) === ref[t]), BC_REF), [true, true, true]);
+
+    // ---- إحصائيات المنتجات: الصافي بعد المرتجعات، لكل طرد مُرسَل، نقطة التعادل، القرار ----
+    eq('إحصائيات منتج + قرار', await page.evaluate(() => {
+      S.entries = []; const d = iso();
+      const mk = (id, prod, st, amt, w) => ({ id, type: 'vonder', date: d, desc: id, status: st, amount: amt, sellPrice: 15000, product: prod, quantity: 1, ship: { wilaya: w, type: 'home' }, returnTaxe: 250 });
+      for (let i = 0; i < 6; i++) S.entries.push(mk('a' + i, 'ساعة', 'delivered', 1000, 'Oran'));
+      S.entries.push(mk('a6', 'ساعة', 'returned', 1000, 'Djelfa'), mk('a7', 'ساعة', 'returned', 1000, 'Djelfa'));
+      S.entries.push({ id: 'r1', type: 'return', date: d, amount: 250, linkedOrderId: 'a6' }, { id: 'r2', type: 'return', date: d, amount: 250, linkedOrderId: 'a7' });
+      for (let i = 0; i < 2; i++) S.entries.push(mk('b' + i, 'سماعات', 'delivered', 100, 'Alger'));
+      for (let i = 0; i < 4; i++) S.entries.push(mk('c' + i, 'سماعات', 'returned', 100, 'Alger'));
+      for (let i = 0; i < 4; i++) S.entries.push({ id: 'rb' + i, type: 'return', date: d, amount: 250, linkedOrderId: 'c' + i });
+      resetSigs(); persist();
+      const st = buildProductStats(periodRange('all')), w = st.find(p => p.name === 'ساعة'), h = st.find(p => p.name === 'سماعات');
+      // ساعة: 6000 − 500 = 5500 على 8 طرود = 687.5؛ تسليم 75%؛ تعادل 250/(1000+250)=20%
+      return [w.net, w.perShip, w.rate, Math.round(w.be * 100), w.decision, h.net, h.decision, w.w[wilayaIdOf('Djelfa')].r];
+    }), [5500, 687.5, 0.75, 20, 'scale', -800, 'stop', 2]);
+    eq('واجهات التقارير الجديدة تُعرض', await page.evaluate(() => { const out = []; for (const t of ['products', 'wilayas', 'summary']) { go('reports', { rTab: t }); out.push(document.querySelector('#view').innerText.length > 50); } openProduct(prodKey('ساعة')); out.push(/ولايات|الولايات/.test(document.querySelector('#sheetBody').innerText)); Sheet.close(); return out; }), [true, true, true, true]);
+    eq('المهام: منتج خاسر يظهر في الرئيسية', await page.evaluate(() => { go('home'); return /منتج يخسر/.test(document.querySelector('#view').innerText); }), true);
+
+    // ---- ملصقات الشحن: نافذة طباعة فيها الباركود والزبون والمبلغ، وتُعلَّم كمطبوعة ----
+    {
+      await page.evaluate(() => { S.entries = [{ id: 'L1', type: 'vonder', status: 'pending', date: iso(), desc: 'سمير', tracking: 'yal-XD79UM', sellPrice: 49800, vonderId: '000585899',
+        ship: { name: 'سمير بلقاسم', phone: '0557439912', wilaya: 'Oran', yalCommune: 'Bir El Djir', address: 'hai el hamri', type: 'home', price: 50400, product: 'Dell Laptop' } }]; resetSigs(); persist(); });
+      eq('قائمة الملصقات', await page.evaluate(() => labelQueue().length), 1);
+      const [lp] = await Promise.all([ctx.waitForEvent('page'), page.evaluate(() => printLabels(S.entries))]);
+      await lp.waitForLoadState();
+      eq('الملصق: الباركود والبيانات', await lp.evaluate(() => [document.querySelectorAll('.lbl').length, !!document.querySelector('.bc svg path'), /50\s?400/.test(document.body.innerText), document.body.innerText.includes('0557439912'), document.body.innerText.includes('yal-XD79UM'), document.body.innerText.includes('وهران')]), [1, true, true, true, true, true]);
+      await lp.close();
+      eq('الملصق عُلِّم كمطبوع', await page.evaluate(() => [!!S.entries[0].labelPrintedAt, labelQueue().length]), [true, 0]);
+    }
+    eq('الإعدادات مطوية وتنفتح على القسم المطلوب', await page.evaluate(() => { go('settings', { scrollTo: 'sec-fees' }); return [document.querySelectorAll('details.set').length, document.getElementById('sec-fees').open, document.getElementById('sec-cloud').open]; }), [10, true, false]);
   } catch (e) { failed++; console.error('✗ استثناء:', e); }
   await browser.close(); proxy.kill(); try { require('fs').unlinkSync(inboxFile); } catch {}
   console.log(`\n${passed} نجح • ${failed} فشل`);
