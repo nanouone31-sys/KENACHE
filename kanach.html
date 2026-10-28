@@ -442,7 +442,7 @@ const LS = {
   jbId:'jsonbin_id', jbKey:'jsonbin_key', device:'device_id', lastChange:'local_last_change', draft:'kanach_last_vonder', cloudSeen:'kanach_cloud_seen'
 };
 const DEFAULT_SETTINGS = { appName:'كناش', adsPaused:true, defPrice:11700, defProfit:1048, defSeller:1150, defTaxe:250, soundAlert:true, browserNotif:false,
-  appFeePct:6, fixedFee:400, originWilaya:'Oran', feePayer:'unset', defShip:'home', assumeRate:80, callScript:true };
+  appFeePct:6, fixedFee:0, codPct:0.75, originWilaya:'Oran', defShip:'home', assumeRate:80, callScript:true };
 const DEFAULT_CARRIER  = { provider:'yalidine', apiId:'', apiToken:'', proxy:'', auto:true, interval:30, netMode:'est', extraFixed:0, extraPct:0, lastSync:null, log:[], undo:null };
 
 const readJSON = (k, fb) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } };
@@ -531,20 +531,22 @@ function commit() { persist(); render(); }
 
 const isOrder = e => e.type === 'vonder' || e.type === 'sonazone';
 
-/* سعر التطبيق = (سعر المنتج × الكمية) + عمولة % + حماية ثابتة + إضافي + فائدتي؛ سعر الزبون = سعر التطبيق + فائدة البائع.
-   رسوم التوصيل: إن كنتَ أنت من يتحملها (feePayer = 'me') تُخصم من فائدتك؛ إن كان الزبون يدفعها فوق السعر فلا تمسّ فائدتك. */
-function calcVonder({ price, qty, myProfit, extra, seller, fee = 0, payer = S.settings.feePayer }) {
+/* سعر التطبيق = (سعر المنتج × الكمية) + عمولة Vonder % + هامش أمان (اختياري، يبقى لك) + إضافي + فائدتي؛ سعر الزبون = سعر التطبيق + فائدة البائع.
+   التوصيل: الزبون يدفع سعر توصيل FreeVendor فوق سعر الزبون، وYalidine يقتطع سعره هو + عمولة تحصيل (0.75%) عند كل تسليم ناجح.
+   فتكلفة التوصيل عليك = (Yalidine − FreeVendor) + العمولة، وتُخصم من فائدتك. */
+function calcVonder({ price, qty, myProfit, extra, seller, wid = 0, type = S.settings.defShip, fvFee, yalFee }) {
   const p = num(price), q = Math.max(1, parseInt(qty) || 1), mp = num(myProfit), ex = num(extra), sl = num(seller);
-  const pct = num(S.settings.appFeePct) / 100, fixedFee = num(S.settings.fixedFee);
+  const pct = num(S.settings.appFeePct) / 100, buffer = num(S.settings.fixedFee);
   const subtotal = p * q, appFee = subtotal * pct;
-  const totalCost = subtotal + appFee + fixedFee + ex;
+  const totalCost = subtotal + appFee + buffer + ex;
   const totalProfit = mp * q, finalPrice = totalCost + totalProfit, sellPrice = finalPrice + sl;
-  const delivery = num(fee), feeCut = payer === 'me' ? delivery : 0;
-  const customerPays = sellPrice + (payer === 'customer' ? delivery : 0);
-  return { price:p, qty:q, subtotal, appFee, appFeePct: pct * 100, fixedFee, extra:ex, totalCost, myProfit:mp, totalProfit, seller:sl, finalPrice, sellPrice,
-    delivery, feeCut, netProfit: totalProfit - feeCut, customerPays };
+  const delivery = deliveryCost({ wid: +wid || 0, type, sellPrice, fvFee, yalFee });
+  return { price:p, qty:q, subtotal, appFee, appFeePct: pct * 100, buffer, fixedFee: buffer, extra:ex, totalCost, myProfit:mp, totalProfit, seller:sl, finalPrice, sellPrice,
+    delivery, netProfit: totalProfit + buffer - delivery.cost, customerPays: sellPrice + delivery.fv };
 }
 const realProfit = (net, totalCost, seller) => num(net) - num(totalCost) - num(seller);
+/* الفائدة الفعلية لطلبية: Net − ما يذهب لـVonder − حصة البائع. هامش الأمان المضاف للسعر ليس تكلفة: يبقى لك */
+const realProfitOf = (e, net) => realProfit(net, num(e.totalCost) - num(e.buffer), e.totalSellerProfit ?? e.sellerProfit);
 
 const NET_RANK = { manual:3, excel:3, api:2, est:1, '':0 };
 const netSourceOf = e => e.netSource || (e.isActualProfit ? 'manual' : '');
@@ -666,6 +668,25 @@ function rankNames(text, items, getName) {
   }).sort((x, y) => y.score - x.score);
 }
 const feeFor = (wid, type) => type === 'desk' ? (YAL_DESK[wid] || 0) : (YAL_FEES[wid]?.home || 0);
+/* أسعار توصيل FreeVendor (ما يدفعه الزبون) — [منزل، مكتب]؛ null = الخدمة غير متوفرة في الولاية */
+const FV_FEES = {1:[1000,500],2:[600,350],3:[800,350],4:[600,350],5:[600,350],6:[600,350],7:[800,350],8:[900,500],9:[450,450],10:[550,350],
+  11:[1200,700],12:[650,350],13:[600,350],14:[600,350],15:[550,350],16:[300,300],17:[800,450],18:[600,350],19:[600,350],20:[650,350],
+  21:[600,350],22:[600,350],23:[600,350],24:[650,350],25:[600,350],26:[550,350],27:[650,350],28:[650,350],29:[600,350],30:[800,450],
+  31:[600,350],32:[900,500],33:[1200,900],34:[600,350],35:[450,300],36:[650,350],37:[1100,700],38:[600,350],39:[800,450],40:[650,350],
+  41:[650,400],42:[450,350],43:[650,350],44:[550,350],45:[800,450],46:[600,400],47:[800,450],48:[600,400],49:[1100,700],50:null,
+  51:[800,500],52:[1000,1000],53:[1200,900],54:null,55:[800,450],56:null,57:[850,850],58:[850,500]};
+const fvFeeFor = (wid, type) => { const f = FV_FEES[wid]; return f ? f[type === 'desk' ? 1 : 0] : null; };
+/* عند جهل الولاية: الوسيط عبر الولايات (تقدير، يُعلَّم كذلك) */
+const DIFF_MED = (() => { const med = a => { const b = a.sort((x, y) => x - y); return b[b.length >> 1]; }; const o = {};
+  ['home', 'desk'].forEach(t => { const ws = Object.keys(FV_FEES).filter(w => FV_FEES[w]); o[t] = { yal: med(ws.map(w => feeFor(+w, t))), fv: med(ws.map(w => fvFeeFor(+w, t))) }; }); return o; })();
+function deliveryCost({ wid = 0, type = 'home', sellPrice = 0, fvFee, yalFee }) {
+  const t = type === 'desk' ? 'desk' : 'home', fvT = wid ? fvFeeFor(wid, t) : undefined;
+  const est = !wid && !(num(yalFee) > 0 && num(fvFee) > 0), unavailable = !!wid && fvT === null;
+  const yal = num(yalFee) > 0 ? num(yalFee) : wid ? feeFor(wid, t) : DIFF_MED[t].yal;
+  const fv = num(fvFee) > 0 ? num(fvFee) : unavailable ? 0 : wid ? fvT : DIFF_MED[t].fv;
+  const collected = num(sellPrice) + fv, codPct = num(S.settings.codPct), cod = collected * codPct / 100;
+  return { yal, fv, diff: yal - fv, codPct, cod, collected, cost: yal - fv + cod, est, unavailable };
+}
 
 const AR_W = ['','أدرار','الشلف','الأغواط','أم البواقي','باتنة','بجاية','بسكرة','بشار','البليدة','البويرة','تمنراست','تبسة','تلمسان','تيارت','تيزي وزو','الجزائر','الجلفة','جيجل','سطيف','سعيدة','سكيكدة','سيدي بلعباس','عنابة','قالمة','قسنطينة','المدية','مستغانم','المسيلة','معسكر','ورقلة','وهران','البيض','إليزي','برج بوعريريج','بومرداس','الطارف','تندوف','تيسمسيلت','الوادي','خنشلة','سوق أهراس','تيبازة','ميلة','عين الدفلى','النعامة','عين تموشنت','غرداية','غليزان','تيميمون','برج باجي مختار','أولاد جلال','بني عباس','عين صالح','عين قزام','تقرت','جانت','المغير','المنيعة'];
 const WIDS = Object.keys(YAL_FEES).map(Number);
@@ -688,23 +709,42 @@ function wilayaIdOf(text, strict = false) {
   W_CACHE.set(ck, id); return id;
 }
 const wilayaOfEntry = e => wilayaIdOf(e.ship?.wilaya || e.yalidineInfo?.wilaya || '');
-/* رسوم التوصيل لطلبية: الحقيقية من Yalidine إن وُجدت، وإلا من جدول الأسعار حسب الولاية ونوع التوصيل */
-function feeOf(e) {
-  if (e.carrier?.deliveryFee > 0) return e.carrier.deliveryFee;
-  const w = wilayaOfEntry(e); return w ? feeFor(w, e.ship?.type || S.settings.defShip) : 0;
-}
-const feeCutOf = e => S.settings.feePayer === 'me' && e.type === 'vonder' ? feeOf(e) : 0;
+/* تكلفة التوصيل لطلبية: رسوم Yalidine الحقيقية إن وصلت من الـAPI، وسعر FreeVendor المستورد إن وُجد، وإلا الجدولان */
+const deliveryCostOf = e => deliveryCost({ wid: wilayaOfEntry(e), type: e.ship?.type || S.settings.defShip, sellPrice: e.sellPrice || 0, fvFee: e.ship?.fvFee, yalFee: e.carrier?.deliveryFee });
 const grossOf = e => e.grossProfit ?? (e.type === 'vonder' ? num(e.myProfit) * (e.quantity || 1) : e.amount);
-/* بعد تغيير «من يدفع التوصيل» أو إضافة الولاية: أعِد حساب الفائدة المتوقعة للطلبيات المعلّقة */
+const expectedOf = e => grossOf(e) + num(e.buffer) - deliveryCostOf(e).cost;
+/* أعِد حساب الفائدة المتوقعة لكل طلبية Vonder لم يصل Net الحقيقي لها بعد */
 function recomputePending() {
   let n = 0;
   S.entries.forEach(e => {
-    if (e.type !== 'vonder' || e.status !== 'pending' || e.isActualProfit) return;
-    const g = grossOf(e), a = g - feeCutOf(e);
-    if (e.grossProfit == null) e.grossProfit = g;
+    if (e.type !== 'vonder' || e.status === 'returned' || e.isActualProfit) return;
+    if (e.grossProfit == null) e.grossProfit = grossOf(e);
+    const a = expectedOf(e);
     if (Math.round(a) !== Math.round(e.amount)) { e.amount = a; e.expectedProfit = a; n++; }
   });
   return n;
+}
+/* ترحيل v5: «الحماية 400» كانت تقريباً لفرق التوصيل — تُستبدل بالحساب الحقيقي، وتُصحَّح الطلبيات المسجّلة (مع إمكانية التراجع) */
+function migrateV5() {
+  if (num(S.settings.v) >= 5) return null;
+  const hadBuffer = num(S.settings.fixedFee) === 400;
+  if (hadBuffer) S.settings.fixedFee = 0;
+  delete S.settings.feePayer;
+  const pct = num(S.settings.appFeePct) / 100, log = []; let delta = 0;
+  S.entries.forEach(e => {
+    if (e.type !== 'vonder') return;
+    if (e.buffer == null) { const b = num(e.totalCost) - (num(e.productPrice) * (e.quantity || 1) * (1 + pct) + num(e.extraFee)); e.buffer = !e.fromVonder && Math.abs(b - 400) < 2 ? 400 : 0; }
+    if (e.status === 'returned') return;
+    const old = e.amount;
+    let a = old;
+    if (e.isActualProfit && e.netClient > 0) a = realProfitOf(e, e.netClient);
+    else if (!e.isActualProfit) { if (e.grossProfit == null) e.grossProfit = grossOf(e); a = expectedOf(e); }
+    if (Math.round(a) !== Math.round(old)) { log.push([e.id, old]); delta += a - old; e.amount = a; if (!e.isActualProfit) e.expectedProfit = a; }
+  });
+  S.settings.v = 5; saveSettings();
+  const res = { ts: new Date().toISOString(), n: log.length, delta: Math.round(delta), log, hadBuffer };
+  if (log.length) { writeJSON('kanach_mig5', res); persist(); }
+  return res;
 }
 
 /* ---- نسبة التسليم: للولاية إن كانت فيها 5 طلبيات محسومة فأكثر، وإلا العامة، وإلا الافتراض من الإعدادات ---- */
@@ -730,18 +770,14 @@ const RATE_SRC = { wilaya: 'من سجل هذه الولاية', global: 'الم�
 const expectedValue = (profit, rate, taxe) => rate * profit - (1 - rate) * taxe;
 const breakEvenRate = (profit, taxe) => profit + taxe > 0 ? taxe / (profit + taxe) : 1;
 
-/* ---- معايرة: هل Yalidine يخصم رسوم التوصيل من المبلغ؟ نقارن طلبيات Net مؤكد ---- */
+/* ---- تحقّق: هل Net الحقيقي من Yalidine يطابق النموذج (سعر الزبون + توصيل FreeVendor − توصيل Yalidine − 0.75%)؟ ---- */
 function calibrateFees() {
   const med = a => { if (!a.length) return 0; const b = [...a].sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
-  const rows = S.entries.filter(e => e.type === 'vonder' && e.status === 'delivered' && e.isActualProfit && ['excel', 'api', 'manual'].includes(netSourceOf(e)) && e.sellPrice > 0 && e.netClient > 0)
-    .map(e => { const w = wilayaOfEntry(e), fee = e.carrier?.deliveryFee || (w ? feeFor(w, e.ship?.type || 'home') : 0); return { gap: e.sellPrice - e.netClient, fee }; })
-    .filter(x => x.fee > 0);
+  const rows = S.entries.filter(e => e.type === 'vonder' && e.status === 'delivered' && e.isActualProfit && ['excel', 'api', 'manual'].includes(netSourceOf(e)) && e.sellPrice > 0 && e.netClient > 0 && wilayaOfEntry(e))
+    .map(e => { const d = deliveryCostOf(e); return { res: e.netClient - (e.sellPrice + d.fv - d.yal - d.cod) }; });
   if (rows.length < 3) return { n: rows.length, verdict: 'few' };
-  const gap = med(rows.map(x => x.gap)), fee = med(rows.map(x => x.fee));
-  const meRest = med(rows.map(x => x.gap - x.fee)), custRest = gap;
-  const verdict = Math.abs(meRest) <= Math.abs(custRest) ? 'me' : 'customer';
-  const rest = verdict === 'me' ? meRest : custRest;
-  return { n: rows.length, gap, fee, verdict, rest: Math.round(rest), clean: Math.abs(rest) <= Math.max(60, 0.15 * fee) };
+  const res = Math.round(med(rows.map(x => x.res)));
+  return { n: rows.length, res, verdict: Math.abs(res) <= 60 ? 'ok' : 'off' };
 }
 
 let SAME_ORIGIN_PROXY = false; // true عندما يُفتح كناش من الوسيط المحلي نفسه (http://localhost:8787)
@@ -884,8 +920,8 @@ function deriveNet(p) {
   if (p.netExact > 0) return { net: p.netExact, src: p.source === 'excel' ? 'excel' : 'api' };
   const c = S.carrier;
   if (p.source === 'excel' || c.netMode === 'none' || !(p.price > 0)) return { net: 0, src: '' };
-  const feeCut = S.settings.feePayer === 'customer' ? 0 : p.deliveryFee; // إن كان الزبون يدفع التوصيل فوق السعر، لا يُخصم من مستحقك
-  const net = p.price - feeCut - num(c.extraFixed) - p.price * num(c.extraPct) / 100;
+  // p.price = المبلغ المحصَّل من الزبون؛ Yalidine يقتطع سعر توصيله + عمولة التحصيل (+ أي خصم إضافي من الإعدادات)
+  const net = p.price - p.deliveryFee - p.price * num(S.settings.codPct) / 100 - num(c.extraFixed) - p.price * num(c.extraPct) / 100;
   return { net: Math.max(0, net), src: 'est' };
 }
 
@@ -927,7 +963,7 @@ function applyChanges(changes, { source = 'api' } = {}) {
       if (e.type === 'vonder' && e.totalCost && ch.net.net > 0) {
         if (!wasActual) e.expectedProfit = e.amount;
         e.netClient = ch.net.net; e.netSource = ch.net.src; e.isActualProfit = true;
-        e.amount = realProfit(ch.net.net, e.totalCost, e.totalSellerProfit ?? e.sellerProfit);
+        e.amount = realProfitOf(e, ch.net.net);
         res.profit += e.amount;
       }
       if (ch.kind === 'deliver') { e.status = 'delivered'; e.deliveredAt = now; res.delivered++; } else res.netFixed++;
@@ -948,7 +984,7 @@ function importVonder(rows) {
     const vid = String(r.id || ''); if (!vid) { out.skipped++; return; }
     const dt = r.detail || null;
     const shipOf = () => ({ wilaya: (dt?.wilaya || r.wilaya || '').trim(), communeFV: (dt?.commune || '').trim(), address: (dt?.address || '').trim(), type: /stop|relais|bureau/i.test(dt?.delivery || '') ? 'desk' : 'home',
-      product: ((dt?.product || '') + (dt && dt.qty > 1 ? ' ×' + dt.qty : '')).trim(), price: num(dt?.sale) || (r.prices || []).map(num).slice(-1)[0] || 0, name: (dt?.client || r.name || '').trim(), phone: String(dt?.phone || r.phone || '').trim() });
+      product: ((dt?.product || '') + (dt && dt.qty > 1 ? ' ×' + dt.qty : '')).trim(), fvFee: num(dt?.fee) || 0, price: num(dt?.sale) || (r.prices || []).map(num).slice(-1)[0] || 0, name: (dt?.client || r.name || '').trim(), phone: String(dt?.phone || r.phone || '').trim() });
     const ex = S.entries.find(e => e.vonderId === vid);
     if (ex && dt && !ex.tracking && !ex.yalidinePushedAt) ex.ship = shipOf();
     if (ex) { out.dup++; if (ex.status === 'pending' && num(r.seller) > 0 && num(r.seller) !== num(ex.sellerProfit)) { ex.sellerProfit = ex.totalSellerProfit = num(r.seller); } return; }
@@ -962,7 +998,7 @@ function importVonder(rows) {
       totalCost, finalPrice, sellPrice: client, netClient: 0, expectedProfit: myP, isActualProfit: false, netSource:'', sonaBuyPrice:0, sonaSellPrice:0, sonaQuantity:1,
       yalidineInfo: { clientName: name, phone, wilaya: r.wilaya || '', commune:'' } });
     if (dt?.product) S.entries[0].product = String(dt.product).slice(0, 80);
-    const ne = S.entries[0]; ne.grossProfit = myP; ne.amount = ne.expectedProfit = myP - feeCutOf(ne);
+    const ne = S.entries[0]; ne.grossProfit = myP; ne.buffer = 0; ne.amount = ne.expectedProfit = expectedOf(ne);
     if (riskyCustomer(phone)) out.risky++;
     out.added++;
   });
@@ -1095,7 +1131,7 @@ function markDelivered(entry, net, src = 'manual') {
   if (entry.type === 'vonder' && entry.totalCost && net > 0) {
     if (!entry.isActualProfit) entry.expectedProfit = entry.amount;
     entry.netClient = net; entry.netSource = src; entry.isActualProfit = true;
-    entry.amount = realProfit(net, entry.totalCost, entry.totalSellerProfit ?? entry.sellerProfit);
+    entry.amount = realProfitOf(entry, net);
   }
   entry.status = 'delivered'; entry.deliveredAt = new Date().toISOString();
 }
@@ -1276,7 +1312,6 @@ function attentionItems() {
   const add = (k, tone, icon, t, s) => { const n = E.filter(Q[k]).length; if (n) out.push({ k, tone, icon, t: `${n} ${t}`, s }); };
   const calls = callList().length;
   if (calls) out.push({ act: 'call-open', tone: 'neg', icon: 'phone', t: `اتصل اليوم: ${calls} زبون`, s: 'رسائل واتساب جاهزة للفاشلة والخارجة للتسليم والمتأخرة' });
-  if (S.settings.feePayer === 'unset' && S.entries.some(e => e.type === 'vonder')) out.push({ go: 'settings', sub: 'fees', tone: 'wait', icon: 'calc', t: 'حدّد من يدفع رسوم التوصيل', s: 'بدونها تبقى الفائدة المتوقعة غير دقيقة — يمكن معايرتها من طلبياتك' });
   add('risk', 'neg', 'undo', 'طلبية راجعة أو فاشلة التسليم', 'تواصل مع الزبون قبل أن تُرجَع إليك');
   add('mismatch', 'wait', 'alert', 'طلبية مبلغها عند Yalidine يختلف عن سعر الزبون', 'راجع السعر قبل التسليم');
   add('stale', 'wait', 'clock', 'طلبية معلّقة منذ أكثر من 7 أيام', 'تحقّق من حالتها');
@@ -1460,7 +1495,7 @@ function viewCarrier() {
   <section class="card pad-s"><div class="sw"><div class="tx"><b>تطبيق التسليم والمرتجع تلقائياً</b><span>عند إيقافه تراجع كل تحديث قبل تطبيقه</span></div><label class="toggle"><input type="checkbox" data-bind="carrier.auto" ${c.auto ? 'checked' : ''} aria-label="تطبيق تلقائي"><i></i></label></div>
     <div class="sw"><div class="tx"><b>تحديث دوري أثناء فتح التطبيق</b></div><select style="width:130px" data-bind="carrier.interval" data-num data-render>${[[0, 'يدوي فقط'], [15, 'كل 15 د'], [30, 'كل 30 د'], [60, 'كل ساعة'], [180, 'كل 3 ساعات']].map(([v, l]) => `<option value="${v}" ${num(c.interval) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div></section>
   <section class="card pad"><b>كيف تُحسب فائدتك الصافية؟</b>
-    <div class="note" style="margin-top:10px">${ic('info', 18)}<div>الفائدة = <b>Net Client − التكلفة − فائدة البائع</b>. عندما لا يوفّر Yalidine قيمة Net جاهزة، يحسبها التطبيق: <b>المبلغ − ${S.settings.feePayer === 'customer' ? '' : 'رسوم التوصيل − '}خصم إضافي</b> ويعلّمها «تقديرية» (حسب إعداد «من يدفع التوصيل»). ملف Excel من Yalidine يستبدلها بالقيمة الحقيقية.</div></div>
+    <div class="note" style="margin-top:10px">${ic('info', 18)}<div>الفائدة = <b>Net Client − التكلفة − فائدة البائع</b>. عندما لا يوفّر Yalidine قيمة Net جاهزة، يحسبها التطبيق: <b>المبلغ المحصَّل − رسوم توصيل Yalidine − ${fmtNum(num(S.settings.codPct) * 100) / 100}% عمولة التحصيل − خصم إضافي</b> ويعلّمها «تقديرية». ملف Excel من Yalidine يستبدلها بالقيمة الحقيقية.</div></div>
     <div class="field" style="margin-top:12px"><span>طريقة حساب Net من الـAPI</span><select data-bind="carrier.netMode" data-render><option value="est" ${c.netMode === 'est' ? 'selected' : ''}>تقدير تلقائي من مبلغ الطرد</option><option value="none" ${c.netMode === 'none' ? 'selected' : ''}>لا تحسب — انتظر ملف Excel</option></select></div>
     <div class="two"><label class="field"><span>خصم ثابت إضافي (دج)</span><input type="number" inputmode="decimal" data-bind="carrier.extraFixed" data-num value="${num(c.extraFixed)}"></label>
     <label class="field"><span>خصم نسبة (%)</span><input type="number" inputmode="decimal" step="0.1" data-bind="carrier.extraPct" data-num value="${num(c.extraPct)}"></label></div>
@@ -1484,24 +1519,37 @@ function calcState() {
   return ui.calc;
 }
 function solveCalc(c, widOverride) {
-  const s = S.settings, q = Math.max(1, parseInt(c.qty) || 1), pct = num(s.appFeePct) / 100, fixed = num(s.fixedFee), ex = num(c.extra), sl = num(c.seller);
-  const wid = widOverride ?? +c.wid, fee = wid ? feeFor(wid, c.type) : 0, feeCut = s.feePayer === 'me' ? fee : 0;
+  const s = S.settings, q = Math.max(1, parseInt(c.qty) || 1), pct = num(s.appFeePct) / 100, buffer = num(s.fixedFee), ex = num(c.extra), sl = num(c.seller);
+  const wid = widOverride ?? (+c.wid || 0);
   let price = num(c.price), mp = num(c.myProfit);
-  if (c.mode === 'rev') { const cost = price * q * (1 + pct) + fixed + ex; mp = (num(c.sell) - sl - cost) / q; }
-  if (c.mode === 'max') { mp = (num(c.target) + feeCut) / q; price = (num(c.sell) - sl - fixed - ex - feeCut - num(c.target)) / (q * (1 + pct)); }
-  const r = calcVonder({ price, qty: q, myProfit: mp, extra: ex, seller: sl, fee });
+  if (c.mode === 'rev') { const cost = price * q * (1 + pct) + buffer + ex; mp = (num(c.sell) - sl - cost) / q; }
+  if (c.mode === 'max') { // نريد صافياً = target: فائدتي×الكمية + الهامش − تكلفة التوصيل (المحسوبة من سعر الزبون المعروف)
+    const d = deliveryCost({ wid, type: c.type, sellPrice: num(c.sell) });
+    mp = (num(c.target) - buffer + d.cost) / q;
+    price = (num(c.sell) - sl - buffer - ex - mp * q) / (q * (1 + pct));
+  }
+  const r = calcVonder({ price, qty: q, myProfit: mp, extra: ex, seller: sl, wid, type: c.type });
   const taxe = num(s.defTaxe), dr = deliveryRate(wid), ev = expectedValue(r.netProfit, dr.rate, taxe), be = breakEvenRate(r.netProfit, taxe);
   return { ...r, wid, dr, taxe, ev, be, mpPiece: mp };
 }
 function calcVerdict(x) {
   const pr = Math.round(x.dr.rate * 100), bp = Math.round(x.be * 100);
-  if (x.netProfit <= 0) return { tone: 'neg', icon: 'alert', t: 'خاسرة حتى لو وصلت', s: 'السعر لا يغطي التكلفة' + (x.feeCut ? ' ورسوم التوصيل' : '') + ' وفائدة البائع.' };
+  if (x.delivery.unavailable) return { tone: 'neg', icon: 'alert', t: 'FreeVendor لا يوصّل لهذه الولاية', s: 'الطلبيات منها غير متاحة حالياً حسب جدول FreeVendor.' };
+  if (x.netProfit <= 0) return { tone: 'neg', icon: 'alert', t: 'خاسرة حتى لو وصلت', s: 'السعر لا يغطي التكلفة وفرق التوصيل وفائدة البائع.' };
   if (x.ev <= 0) return { tone: 'neg', icon: 'alert', t: 'لا تُرسلها دون تأكيد هاتفي', s: `تحتاج نسبة تسليم ${bp}% على الأقل لتتعادل، ونسبتك هنا ${pr}%.` };
   if (x.dr.rate - x.be < 0.12) return { tone: 'wait', icon: 'alert', t: 'مربحة بهامش أمان ضيّق', s: `نقطة التعادل ${bp}% ونسبتك ${pr}% — مرتجعان إضافيان يقلبانها خسارة. أكّد العنوان.` };
   return { tone: 'pos', icon: 'check', t: 'طلبية مربحة', s: `من كل 10 طلبيات مثلها تصل نحو ${Math.round(x.dr.rate * 10)} وترجع ${10 - Math.round(x.dr.rate * 10)}، ويبقى لك في المتوسط ${moneyT(x.ev)} عن كل واحدة.` };
 }
+/* أسطر التوصيل في أي إيصال: ما يدفعه الزبون، ما يقتطعه Yalidine، والفرق عليك */
+function deliveryRowsHTML(d, label) {
+  if (d.unavailable) return `<div class="kv"><span>التوصيل — ${esc(label)}</span><b class="neg">غير متوفر عند FreeVendor</b></div>`;
+  return `<div class="kv"><span>يدفع الزبون توصيل FreeVendor${d.est ? ' (تقدير — حدّد الولاية)' : ''}</span><b>${money(d.fv)}</b></div>
+    <div class="kv minus"><span>يقتطع Yalidine للتوصيل — ${esc(label)}</span><b>${money(d.yal)}</b></div>
+    <div class="kv minus"><span>عمولة التحصيل ${fmtNum(d.codPct * 100) / 100}% من ${fmtNum(d.collected)}</span><b>${money(d.cod)}</b></div>
+    <div class="kv eqr"><span>تكلفة التوصيل عليك</span><b class="${d.cost > 0 ? 'neg' : 'pos'}">${money(d.cost)}</b></div>`;
+}
 function calcOutHTML() {
-  const c = calcState(), x = solveCalc(c), v = calcVerdict(x), payer = S.settings.feePayer;
+  const c = calcState(), x = solveCalc(c), v = calcVerdict(x);
   const head = c.mode === 'max'
     ? { l: `أقصى سعر للمنتج (للقطعة) لتربح ${moneyT(num(c.target))}`, big: x.price, chips: [['سعر التطبيق', x.finalPrice], ['سعر الزبون', x.sellPrice]] }
     : c.mode === 'rev'
@@ -1516,21 +1564,22 @@ function calcOutHTML() {
     <div class="sub" style="margin-top:6px">نسبة التسليم: ${RATE_SRC[x.dr.src]}${x.dr.n ? ` (${x.dr.n} طلبية)` : ''} • Taxe retour ${fmtNum(x.taxe)} دج</div></div></div>
   <div class="card pad receipt" style="margin-top:12px"><div class="h">التفصيل</div>
     <div class="kv"><span>سعر المنتج × الكمية</span><b class="n">${fmtNum(x.price)} × ${x.qty} = ${fmtNum(x.subtotal)}</b></div>
-    <div class="kv"><span>عمولة ${fmtNum(x.appFeePct)}% + حماية ثابتة</span><b>${money(x.appFee + x.fixedFee)}</b></div>
+    <div class="kv"><span>عمولة Vonder ${fmtNum(x.appFeePct)}%</span><b>${money(x.appFee)}</b></div>
+    ${x.buffer ? `<div class="kv"><span>هامش أمان (يبقى لك)</span><b>${money(x.buffer)}</b></div>` : ''}
     ${x.extra ? `<div class="kv"><span>إضافي</span><b>${money(x.extra)}</b></div>` : ''}
     <div class="kv"><span>فائدتي (${fmtNum(x.mpPiece)} × ${x.qty})</span><b class="pos">${money(x.totalProfit)}</b></div>
     <div class="kv eqr"><span>سعر التطبيق</span><b>${money(x.finalPrice)}</b></div>
     <div class="kv"><span>فائدة البائع</span><b>${money(x.seller)}</b></div>
     <div class="kv eqr"><span>سعر الزبون</span><b>${money(x.sellPrice)}</b></div>
-    ${x.delivery ? `<div class="kv ${payer === 'me' ? 'minus' : ''}"><span>توصيل ${c.type === 'desk' ? 'مكتب' : 'منزل'} — ${esc(AR_W[x.wid])}${payer === 'customer' ? ' (يدفعه الزبون)' : payer === 'unset' ? ' (غير محسوب)' : ''}</span><b>${money(x.delivery)}</b></div>` : ''}
+    ${deliveryRowsHTML(x.delivery, `${c.type === 'desk' ? 'مكتب' : 'منزل'}${x.wid ? ' ' + AR_W[x.wid] : ''}`)}
     <div class="kv key"><span>فائدتي الصافية</span><b class="${x.netProfit >= 0 ? 'pos' : 'neg'}">${money(x.netProfit)}</b></div></div>
-  ${payer === 'unset' && x.delivery ? `<div class="note warn" style="margin-top:12px">${ic('alert', 18)}<div>لم تحدّد بعد من يدفع رسوم التوصيل، لذلك لم تُخصم من فائدتك. <button class="lnk" data-act="go" data-tab="settings" data-sub="fees">حدّد الآن</button></div></div>` : ''}`;
+  <div class="sub" style="margin-top:8px;text-align:center">يدفع الزبون في المجموع <b class="n">${fmtNum(x.customerPays)}</b> دج (السعر + توصيل FreeVendor)</div>`;
 }
 function wilayaTableHTML() {
   const c = calcState();
-  const rows = WIDS.map(w => ({ w, x: solveCalc(c, w), raw: rateTable().by[w] })).sort((a, b) => b.x.ev - a.x.ev);
-  return `<div class="wt-wrap"><table class="wt"><thead><tr><th>الولاية</th><th class="n">التوصيل</th><th class="n">التسليم</th><th class="n">${c.mode === 'max' ? 'أقصى سعر' : 'متوقَّع'}</th></tr></thead><tbody>
-    ${rows.map(({ w, x, raw }) => `<tr class="${+c.wid === w ? 'cur' : ''}" data-act="calc-wid" data-v="${w}" style="cursor:pointer"><td>${esc(wLabel(w))}</td><td class="n">${fmtNum(x.delivery)}</td>
+  const rows = WIDS.map(w => ({ w, x: solveCalc(c, w), raw: rateTable().by[w] })).sort((a, b) => (a.x.delivery.unavailable - b.x.delivery.unavailable) || (b.x.ev - a.x.ev));
+  return `<div class="wt-wrap"><table class="wt"><thead><tr><th>الولاية</th><th class="n">فرق التوصيل</th><th class="n">التسليم</th><th class="n">${c.mode === 'max' ? 'أقصى سعر' : 'متوقَّع'}</th></tr></thead><tbody>
+    ${rows.map(({ w, x, raw }) => `<tr class="${+c.wid === w ? 'cur' : ''}" data-act="calc-wid" data-v="${w}" style="cursor:pointer"><td>${esc(wLabel(w))}</td><td class="n">${x.delivery.unavailable ? '<span class="muted">—</span>' : `${fmtNum(x.delivery.diff)} <small class="muted">(${fmtNum(x.delivery.yal)}−${fmtNum(x.delivery.fv)})</small>`}</td>
       <td class="n ${x.dr.src === 'wilaya' ? '' : 'muted'}">${Math.round(x.dr.rate * 100)}%${raw ? ` <small class="muted">(${raw.d + raw.r})</small>` : ''}</td><td class="n ${x.ev > 0 ? '' : 'neg'}"><b>${fmtNum(c.mode === 'max' ? x.price : x.ev)}</b></td></tr>`).join('')}
   </tbody></table></div>`;
 }
@@ -1550,7 +1599,7 @@ function viewCalc() {
       <button class="btn sec2 block" data-act="calc-to-order">${ic('plus', 18)}<span>سجّلها كطلبية</span></button>
     </section>
   </div><div id="calcOut">${calcOutHTML()}</div></div>
-  <details class="acc" style="margin-top:14px"><summary>${ic('truck', 20)}مقارنة كل الولايات لهذه الطلبية</summary><div class="inner"><div class="sub" style="margin-bottom:8px">مرتبة من الأربح إلى الأخسر بعد التوصيل وخطر المرتجع. النسب الباهتة تقديرية (أقل من 5 طلبيات في الولاية). اضغط على ولاية لاختيارها.</div><div id="wTable">${wilayaTableHTML()}</div></div></details>`;
+  <details class="acc" style="margin-top:14px"><summary>${ic('truck', 20)}مقارنة كل الولايات لهذه الطلبية</summary><div class="inner"><div class="sub" style="margin-bottom:8px">مرتبة من الأربح إلى الأخسر بعد فرق التوصيل (Yalidine − FreeVendor) وعمولة التحصيل وخطر المرتجع. النسب الباهتة تقديرية (أقل من 5 طلبيات في الولاية). اضغط على ولاية لاختيارها.</div><div id="wTable">${wilayaTableHTML()}</div></div></details>`;
 }
 function calcRefresh() {
   try { localStorage.setItem('kanach_calc', JSON.stringify(ui.calc)); } catch {}
@@ -1677,20 +1726,30 @@ function viewReports() {
 }
 
 function feesSection() {
-  const s = S.settings, cal = calibrateFees(), num_ = (k, l, h = '') => `<label class="field"><span>${l}</span><input type="number" inputmode="decimal" step="any" data-bind="settings.${k}" data-num value="${num(s[k])}">${h ? `<small>${h}</small>` : ''}</label>`;
-  const P = [['me', 'أنا (تُخصم من مستحقي)'], ['customer', 'الزبون (فوق السعر)'], ['unset', 'لم أحدّد']];
+  const s = S.settings, cal = calibrateFees(), mig = readJSON('kanach_mig5', null);
+  const num_ = (k, l, h = '') => `<label class="field"><span>${l}</span><input type="number" inputmode="decimal" step="any" data-bind="settings.${k}" data-num data-recalc value="${num(s[k])}">${h ? `<small>${h}</small>` : ''}</label>`;
+  const ex = deliveryCost({ wid: 1, type: 'home', sellPrice: 14600 });
   const calHTML = cal.verdict === 'few'
-    ? `<div class="note">${ic('info', 18)}<div>المعايرة التلقائية تحتاج 3 طلبيات مُسلَّمة على الأقل بـ Net مؤكد (من ملف Excel أو API أو إدخال يدوي) مع ولاية معروفة. عندك الآن ${cal.n}.</div></div>`
-    : `<div class="note ${cal.clean ? 'good' : 'warn'}">${ic(cal.clean ? 'check' : 'alert', 18)}<div>من <b>${cal.n}</b> طلبية مؤكدة: الفرق الوسيط بين سعر الزبون وNet هو <b>${moneyT(cal.gap)}</b>، ورسوم التوصيل الوسيطة <b>${moneyT(cal.fee)}</b>.<br>
-      ${cal.verdict === 'me' ? 'يبدو أن Yalidine <b>يخصم التوصيل من مبلغك</b>.' : 'يبدو أن <b>الزبون يدفع التوصيل</b> فوق السعر.'}${Math.abs(cal.rest) >= 30 ? ` يبقى خصم إضافي ≈ <b>${moneyT(cal.rest)}</b> لكل طلبية.` : ''}
-      ${s.feePayer !== cal.verdict || (Math.abs(cal.rest) >= 30 && Math.round(num(S.carrier.extraFixed)) !== Math.max(0, cal.rest)) ? `<div style="margin-top:8px"><button class="btn sm" data-act="fee-apply" data-v="${cal.verdict}" data-rest="${cal.rest}">طبّق هذه المعايرة</button></div>` : '<div class="sub" style="margin-top:4px">إعداداتك مطابقة لبياناتك ✓</div>'}</div></div>`;
-  return `<section class="card pad" id="sec-fees"><b>الحاسبة ورسوم التوصيل</b><div class="sub" style="margin:2px 0 12px">تُستعمل في الحاسبة، والفائدة المتوقعة، وتقدير Net.</div>
-    <div class="field"><span>من يدفع رسوم Yalidine؟</span><div class="seg" style="padding:0;flex-wrap:wrap">${P.map(([k, l]) => `<button data-act="fee-payer" data-v="${k}" aria-pressed="${s.feePayer === k}">${l}</button>`).join('')}</div></div>
+    ? `<div class="sub" style="margin-top:4px">التحقّق التلقائي من بياناتك يبدأ بعد 3 طلبيات مُسلَّمة بـ Net مؤكد (Excel أو API أو يدوي) وولاية معروفة — عندك ${cal.n}.</div>`
+    : cal.verdict === 'ok'
+      ? `<div class="note good">${ic('check', 18)}<div>تحقّقتُ من <b>${cal.n}</b> طلبية مؤكدة: Net الحقيقي يطابق هذا الحساب (فرق وسيط ${moneyT(cal.res)}).</div></div>`
+      : `<div class="note warn">${ic('alert', 18)}<div>في <b>${cal.n}</b> طلبية مؤكدة، Net الحقيقي ${cal.res < 0 ? 'أقل' : 'أكثر'} من المحسوب بـ <b>${moneyT(Math.abs(cal.res))}</b> في المتوسط${cal.res < 0 ? ' — قد يقتطع Yalidine شيئاً آخر (تأمين، وزن زائد…)' : ' — ربما سعر توصيل FreeVendor عندك أعلى من الجدول'}.
+        ${cal.res < 0 ? `<div style="margin-top:8px"><button class="btn sm" data-act="fee-extra" data-v="${-cal.res}">احسب ${moneyT(-cal.res)} خصماً إضافياً لكل طلبية</button></div>` : ''}</div></div>`;
+  return `<section class="card pad" id="sec-fees"><b>الحاسبة ورسوم التوصيل</b>
+    <div class="note" style="margin:10px 0 12px">${ic('info', 18)}<div>الزبون يدفع <b>سعر توصيل FreeVendor</b> فوق سعر الزبون، وYalidine يقتطع <b>سعره هو</b> + <b>${fmtNum(num(s.codPct) * 100) / 100}%</b> من المبلغ المحصَّل عند كل تسليم ناجح. الفرق يُخصم من فائدتك.<br>
+      مثال أدرار منزل: ${fmtNum(ex.yal)} − ${fmtNum(ex.fv)} + ${fmtNum(ex.cod)} = <b>${moneyT(ex.cost)}</b> عليك.</div></div>
+    ${mig && mig.n && !mig.hidden ? `<div class="note ${mig.delta >= 0 ? 'good' : 'warn'}" style="margin-bottom:12px">${ic('calc', 18)}<div>صُحِّحت فائدة <b>${mig.n}</b> طلبية بالحساب الحقيقي: مجموع فائدتها ${mig.delta >= 0 ? 'زاد' : 'نقص'} بـ <b>${moneyT(Math.abs(mig.delta))}</b>${mig.hadBuffer ? '، وأُلغيت «الحماية 400» التقريبية' : ''}.
+      <div class="row" style="margin-top:8px"><button class="btn sm sec2" data-act="mig-undo">تراجع</button><button class="btn sm ghost" data-act="mig-hide">إخفاء</button></div></div></div>` : ''}
     ${calHTML}
-    <div class="two" style="margin-top:12px">${num_('appFeePct', 'عمولة Vonder (%)')}${num_('fixedFee', 'حماية ثابتة (دج)')}</div>
+    <div class="two" style="margin-top:12px">${num_('codPct', 'عمولة تحصيل Yalidine (%)')}${num_('appFeePct', 'عمولة Vonder (%)')}</div>
+    ${num_('fixedFee', 'هامش أمان إضافي (دج)', 'اختياري. يُضاف إلى سعر التطبيق ويبقى لك — لم يعد يُستعمل لتقريب فرق التوصيل.')}
     <div class="two"><label class="field"><span>ولاية الإرسال</span><select data-bind="settings.originWilaya">${WIDS.map(w => `<option value="${esc(YAL_FEES[w].n)}" ${YAL_FEES[w].n === s.originWilaya ? 'selected' : ''}>${esc(wLabel(w))}</option>`).join('')}</select></label>
-    <label class="field"><span>نوع التوصيل الافتراضي</span><select data-bind="settings.defShip"><option value="home" ${s.defShip !== 'desk' ? 'selected' : ''}>للمنزل</option><option value="desk" ${s.defShip === 'desk' ? 'selected' : ''}>مكتب</option></select></label></div>
-    ${num_('assumeRate', 'نسبة تسليم مفترضة (%)', 'تُستعمل فقط قبل أن تتجمّع 5 طلبيات محسومة في سجلك.')}</section>`;
+    <label class="field"><span>نوع التوصيل الافتراضي</span><select data-bind="settings.defShip" data-recalc><option value="home" ${s.defShip !== 'desk' ? 'selected' : ''}>للمنزل</option><option value="desk" ${s.defShip === 'desk' ? 'selected' : ''}>مكتب</option></select></label></div>
+    ${num_('assumeRate', 'نسبة تسليم مفترضة (%)', 'تُستعمل فقط قبل أن تتجمّع 5 طلبيات محسومة في سجلك.')}
+    <details class="acc" style="box-shadow:none"><summary style="padding:12px 14px;font-size:14px">${ic('truck', 18)}جدول الأسعار: FreeVendor مقابل Yalidine</summary><div class="inner"><div class="wt-wrap"><table class="wt">
+      <thead><tr><th>الولاية</th><th class="n">منزل FV / Yal</th><th class="n">مكتب FV / Yal</th></tr></thead><tbody>
+      ${WIDS.map(w => { const f = FV_FEES[w]; return `<tr><td>${esc(wLabel(w))}</td>${['home', 'desk'].map((t, i) => `<td class="n">${f ? `${fmtNum(f[i])} / ${fmtNum(feeFor(w, t))} <small class="${feeFor(w, t) - f[i] > 0 ? 'neg' : 'pos'}">(${feeFor(w, t) - f[i] > 0 ? '−' : '+'}${fmtNum(Math.abs(feeFor(w, t) - f[i]))})</small>` : '<span class="muted">غير متوفر</span>'}</td>`).join('')}</tr>`; }).join('')}
+      </tbody></table></div></div></details></section>`;
 }
 function viewSettings() {
   const s = S.settings, jb = !!localStorage.getItem(LS.jbKey), hasKey = !!localStorage.getItem(LS.apiKey);
@@ -1851,24 +1910,21 @@ function updateForm() {
   if (!F) return;
   const t = F.type, box = $('#calcBox');
   if (t === 'vonder' && box) {
-    const fee = F.wid ? feeFor(+F.wid, F.shipType) : 0;
-    const c = calcVonder({ price: F.price, qty: F.qty, myProfit: F.myProfit, extra: F.extra, seller: F.seller, fee }), net = num(F.net), showReal = F.status === 'delivered' && net > 0;
-    const payer = S.settings.feePayer, dr = deliveryRate(+F.wid), ev = expectedValue(c.netProfit, dr.rate, num(S.settings.defTaxe));
-    box.innerHTML = `<div class="card pad-s" style="margin-top:4px">
+    const c = calcVonder({ price: F.price, qty: F.qty, myProfit: F.myProfit, extra: F.extra, seller: F.seller, wid: +F.wid || 0, type: F.shipType }), net = num(F.net), showReal = F.status === 'delivered' && net > 0;
+    const dr = deliveryRate(+F.wid), ev = expectedValue(c.netProfit, dr.rate, num(S.settings.defTaxe)), real = realProfit(net, c.totalCost - c.buffer, c.seller);
+    box.innerHTML = `<div class="card pad-s receipt" style="margin-top:4px">
       <div class="kv"><span>سعر المنتج × الكمية</span><b class="n">${fmtNum(c.price)} × ${c.qty} = ${fmtNum(c.subtotal)}</b></div>
-      <div class="kv"><span>عمولة ${fmtNum(c.appFeePct)}%</span><b>${money(c.appFee)}</b></div><div class="kv"><span>حماية ثابتة للطلب</span><b>${money(c.fixedFee)}</b></div>
+      <div class="kv"><span>عمولة Vonder ${fmtNum(c.appFeePct)}%</span><b>${money(c.appFee)}</b></div>
+      ${c.buffer ? `<div class="kv"><span>هامش أمان (يبقى لك)</span><b>${money(c.buffer)}</b></div>` : ''}
       ${c.extra ? `<div class="kv"><span>فائدة إضافية</span><b>${money(c.extra)}</b></div>` : ''}
-      <div class="kv tot"><span>التكلفة الإجمالية</span><b>${money(c.totalCost)}</b></div>
       <div class="kv"><span>فائدتي × الكمية</span><b class="pos">${money(c.totalProfit)}</b></div>
-      <div class="kv key"><span>سعر التطبيق</span><b>${money(c.finalPrice)}<button class="copy" data-act="copy" data-v="${Math.round(c.finalPrice)}" aria-label="نسخ">${ic('copy', 14)}</button></b></div>
+      <div class="kv key" style="margin:6px -14px 8px;border-radius:0"><span>سعر التطبيق</span><b>${money(c.finalPrice)}<button class="copy" data-act="copy" data-v="${Math.round(c.finalPrice)}" aria-label="نسخ">${ic('copy', 14)}</button></b></div>
       <div class="kv"><span>فائدة البائع</span><b>${money(c.seller)}</b></div>
-      <div class="kv key"><span>سعر الزبون النهائي</span><b>${money(c.sellPrice)}<button class="copy" data-act="copy" data-v="${Math.round(c.sellPrice)}" aria-label="نسخ">${ic('copy', 14)}</button></b></div>
-      ${fee ? `<div class="kv" style="margin-top:8px"><span>توصيل ${F.shipType === 'desk' ? 'مكتب' : 'منزل'} — ${esc(AR_W[+F.wid])}</span><b>${money(fee)}</b></div>
-        ${payer === 'me' ? `<div class="kv"><span>فائدتي بعد خصم التوصيل</span><b class="${c.netProfit >= 0 ? 'pos' : 'neg'}">${money(c.netProfit)}</b></div>`
-          : payer === 'customer' ? `<div class="kv"><span>يدفع الزبون للموزّع</span><b>${money(c.customerPays)}</b></div>`
-          : `<div class="sub" style="padding:4px 0">لم تحدّد بعد من يدفع التوصيل — <button class="lnk" data-act="go" data-tab="settings" data-sub="fees">حدّده من الإعدادات</button>.</div>`}
-        <div class="kv"><span>متوقَّع مع خطر المرتجع <span class="muted">(تسليم ${Math.round(dr.rate * 100)}%)</span></span><b class="${ev > 0 ? '' : 'neg'}">${money(ev)}</b></div>` : ''}
-      ${showReal ? `<div class="kv tot"><span>فائدتي الفعلية</span><b class="${realProfit(net, c.totalCost, c.seller) >= 0 ? 'pos' : 'neg'}">${money(realProfit(net, c.totalCost, c.seller))}</b></div>` : ''}</div>`;
+      <div class="kv key" style="margin:6px -14px 8px;border-radius:0"><span>سعر الزبون النهائي</span><b>${money(c.sellPrice)}<button class="copy" data-act="copy" data-v="${Math.round(c.sellPrice)}" aria-label="نسخ">${ic('copy', 14)}</button></b></div>
+      ${deliveryRowsHTML(c.delivery, `${F.shipType === 'desk' ? 'مكتب' : 'منزل'}${F.wid ? ' ' + AR_W[+F.wid] : ''}`)}
+      <div class="kv tot"><span>فائدتي الصافية المتوقعة</span><b class="${c.netProfit >= 0 ? 'pos' : 'neg'}">${money(c.netProfit)}</b></div>
+      ${F.wid ? `<div class="kv"><span>مع خطر المرتجع <span class="muted">(تسليم ${Math.round(dr.rate * 100)}%)</span></span><b class="${ev > 0 ? '' : 'neg'}">${money(ev)}</b></div>` : ''}
+      ${showReal ? `<div class="kv tot"><span>فائدتي الفعلية (من Net)</span><b class="${real >= 0 ? 'pos' : 'neg'}">${money(real)}</b></div>` : ''}</div>`;
   }
   if (t === 'sonazone' && box) { const q = Math.max(1, parseInt(F.sqty) || 1), u = num(F.sell) - num(F.buy); box.innerHTML = `<div class="card pad-s"><div class="kv tot" style="border:0;margin:0;padding:0"><span>فائدتك</span><b class="${u >= 0 ? 'pos' : 'neg'}"><span class="n">${fmtNum(u)} × ${q} =</span> ${money(u * q)}</b></div></div>`; }
   if (t === 'return') {
@@ -1898,9 +1954,9 @@ function saveForm() {
   else {
     const delivered = F.status === 'delivered', common = { id: old?.id || uid(), date: F.date, desc: F.desc.trim() || (t === 'vonder' ? 'طلبية Vonder' : 'طلبية Sonazone'), tracking: cleanTrack(F.tracking), product: F.product.trim(), status: F.status, timestamp: old?.timestamp || now };
     if (t === 'vonder') {
-      const c = calcVonder({ price: F.price, qty: F.qty, myProfit: F.myProfit, extra: F.extra, seller: F.seller, fee: F.wid ? feeFor(+F.wid, F.shipType) : 0 }), net = num(F.net), actual = delivered && net > 0;
+      const c = calcVonder({ price: F.price, qty: F.qty, myProfit: F.myProfit, extra: F.extra, seller: F.seller, wid: +F.wid || 0, type: F.shipType, fvFee: old?.ship?.fvFee, yalFee: old?.carrier?.deliveryFee }), net = num(F.net), actual = delivered && net > 0;
       const keepSrc = old && Math.round(old.netClient || 0) === Math.round(net) ? (old.netSource || 'manual') : 'manual';
-      e = { ...common, type: 'vonder', amount: actual ? realProfit(net, c.totalCost, c.seller) : c.netProfit, grossProfit: c.totalProfit, productPrice: c.price, quantity: c.qty, myProfit: c.myProfit, sellerProfit: c.seller, totalSellerProfit: c.seller, extraFee: c.extra,
+      e = { ...common, type: 'vonder', amount: actual ? realProfit(net, c.totalCost - c.buffer, c.seller) : c.netProfit, grossProfit: c.totalProfit, buffer: c.buffer, productPrice: c.price, quantity: c.qty, myProfit: c.myProfit, sellerProfit: c.seller, totalSellerProfit: c.seller, extraFee: c.extra,
         totalCost: c.totalCost, finalPrice: c.finalPrice, sellPrice: c.sellPrice, netClient: actual ? net : 0, expectedProfit: c.netProfit, isActualProfit: actual, netSource: actual ? keepSrc : '', sonaBuyPrice: 0, sonaSellPrice: 0, sonaQuantity: 1 };
     } else {
       const q = Math.max(1, parseInt(F.sqty) || 1);
@@ -1936,25 +1992,23 @@ function entryBody(e) {
     : `<div class="row"><input type="text" class="ltr grow" id="trkIn" placeholder="yal-…" autocapitalize="off"><button class="btn sm" data-act="entry-track-save" data-id="${esc(e.id)}">حفظ</button></div>`}</div><div id="histBox"></div></div>`;
   if (y?.clientName || y?.phone || y?.wilaya) h += `<div class="card pad" style="margin-bottom:12px"><div class="row"><div class="grow"><b>${esc(y.clientName || e.desc)}</b><div class="sub">${[y.wilaya, y.commune].filter(Boolean).map(esc).join(' • ')}</div></div>${y.phone ? `<a class="iconbtn" href="tel:${esc(y.phone)}" aria-label="اتصال">${ic('phone')}</a><a class="iconbtn" href="${waLink(y.phone)}" target="_blank" rel="noopener" aria-label="واتساب">${ic('chat')}</a>` : ''}</div></div>`;
   if (e.type === 'vonder') {
-    const seller = e.totalSellerProfit ?? e.sellerProfit ?? 0, wn = e.ship?.wilaya || y?.wilaya || '';
-    const wid = Object.keys(YAL_FEES).find(k => norm(YAL_FEES[k].n) === norm(wn));
-    const feeEst = c?.deliveryFee || (wid ? feeFor(+wid, e.ship?.type || 'home') : 0);
+    const seller = e.totalSellerProfit ?? e.sellerProfit ?? 0, wid = wilayaOfEntry(e), dc = deliveryCostOf(e);
     if (e.isActualProfit) {
       const ded = Math.max(0, (e.sellPrice || 0) - (e.netClient || 0));
       h += `<div class="card pad receipt" style="margin-bottom:12px"><div class="h">كيف حُسبت فائدتك</div>
         <div class="kv"><span>سعر الزبون (المبلغ المحصَّل)</span><b>${money(e.sellPrice)}</b></div>
         <div class="kv minus"><span>رسوم وخصومات Yalidine</span><b>${money(ded)}</b></div>
         <div class="kv eqr"><span>Net Client <span class="badge ${src === 'est' ? 'info' : 'pos'}">${NET_LABEL[src] || ''}</span></span><b>${money(e.netClient)}</b></div>
-        <div class="kv minus"><span>تكلفة المنتج (Vonder)</span><b>${money(e.totalCost)}</b></div>
+        <div class="kv minus"><span>تكلفة المنتج (Vonder)</span><b>${money(e.totalCost - num(e.buffer))}</b></div>
         <div class="kv minus"><span>فائدة البائع</span><b>${money(seller)}</b></div>
         <div class="kv key"><span>فائدتي الفعلية</span><b class="${e.amount >= 0 ? 'pos' : 'neg'}">${money(e.amount)}</b></div></div>`;
     } else {
       h += `<div class="card pad receipt" style="margin-bottom:12px"><div class="h">${e.status === 'returned' ? 'الطلبية رجعت — هذه الفائدة لم تتحقق' : 'الفائدة المتوقعة (قبل التسليم)'}</div>
         <div class="kv"><span>سعر الزبون</span><b>${money(e.sellPrice)}</b></div>
-        <div class="kv minus"><span>تكلفة المنتج (Vonder)</span><b>${money(e.totalCost)}</b></div>
+        <div class="kv minus"><span>تكلفة المنتج (Vonder)</span><b>${money(e.totalCost - num(e.buffer))}</b></div>
         <div class="kv minus"><span>فائدة البائع</span><b>${money(seller)}</b></div>
+        ${deliveryRowsHTML(dc, `${e.ship?.type === 'desk' ? 'مكتب' : 'منزل'}${wid ? ' ' + AR_W[wid] : ''}`)}
         ${e.profitAssumed ? `<div class="sub" style="padding:6px 0">فائدتك هنا مقدَّرة من الإعداد الافتراضي — تُصحَّح تلقائياً عند التسليم.</div>` : ''}
-        ${feeEst ? `<div class="sub" style="padding:6px 0">رسوم Yalidine ${c?.deliveryFee ? '' : 'المتوقعة '}≈ <b>${fmtNum(feeEst)} دج</b> تُخصم من المبلغ عند التسليم.</div>` : ''}
         <div class="kv key"><span>فائدتي (${e.status === 'returned' ? 'ضاعت' : 'متوقعة'})</span><b>${money(e.amount)}</b></div></div>`;
     }
     h += `<details class="acc" style="margin-bottom:12px"><summary>تفاصيل السعر</summary><div class="inner">
@@ -1991,8 +2045,10 @@ const A = {
     $('#sheetBody').innerHTML = formBody(); updateForm(); },
   'call-open': () => openCallList(),
   'call-done': (d) => { const e = S.entries.find(x => sameId(x.id, d.id)); if (!e) return; e.calledOn = todayISO(); persist(); openCallList(); render(); },
-  'fee-payer': async (d) => { if (S.settings.feePayer === d.v) return; S.settings.feePayer = d.v; saveSettings(); const n = recomputePending(); if (n) persist(); render(); toast(n ? `تم — أُعيد حساب ${n} طلبية معلّقة` : 'تم الحفظ'); },
-  'fee-apply': (d) => { S.settings.feePayer = d.v; saveSettings(); if (d.rest && Math.abs(num(d.rest)) >= 30) { S.carrier.extraFixed = Math.max(0, num(d.rest)); saveCarrier(); } const n = recomputePending(); if (n) persist(); render(); toast(`طُبّقت المعايرة${n ? ` • ${n} طلبية معلّقة أُعيد حسابها` : ''}`); },
+  'fee-extra': (d) => { S.carrier.extraFixed = Math.max(0, num(d.v)); saveCarrier(); render(); toast('سيُخصم من تقدير Net كل طلبية ' + moneyT(num(d.v))); },
+  'mig-undo': async (d) => { const m = readJSON('kanach_mig5', null); if (!m) return; const r = await ask({ title: 'التراجع عن التصحيح؟', body: `ستعود فائدة ${m.n} طلبية إلى قيمها السابقة.`, ok: 'تراجع' }); if (!r.ok) return;
+    const back = new Map(m.log); S.entries.forEach(e => { if (back.has(e.id)) { e.amount = back.get(e.id); if (!e.isActualProfit) e.expectedProfit = e.amount; } }); localStorage.removeItem('kanach_mig5'); commit(); toast('تم التراجع'); },
+  'mig-hide': () => { const m = readJSON('kanach_mig5', null); if (m) { m.hidden = true; writeJSON('kanach_mig5', m); } render(); },
   add: () => openForm({ type: 'vonder' }),
   theme: () => { const dark = document.documentElement.getAttribute('data-theme') === 'dark'; document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark'); localStorage.setItem(LS.theme, dark ? 'light' : 'dark'); render(); },
   period: (d) => { ui.period = d.v; render(); },
@@ -2019,7 +2075,7 @@ const A = {
   'entry-return': async (d) => { const e = S.entries.find(x => sameId(x.id, d.id)); if (!e) return; const r = await ask({ title: 'تسجيل كمرتجع', body: e.status === 'delivered' ? `ستخسر فائدة هذه الطلبية (${moneyT(e.amount)}) بالإضافة إلى Taxe retour.` : 'ستُخصم Taxe retour فقط.', ok: 'تأكيد', danger: true, input: { label: 'Taxe retour (دج)', value: e.carrier?.taxeRetour || S.settings.defTaxe } });
     if (!r.ok) return; markReturned(e, num(r.value)); Sheet.close(); commit(); toast('تم تسجيل المرتجع'); },
   'entry-net': async (d) => { const e = S.entries.find(x => sameId(x.id, d.id)); if (!e) return; const sug = suggestNet(e); const r = await ask({ title: 'Net Client من Yalidine', body: sug ? `تقدير تلقائي: ${moneyT(sug)}` : 'أدخل القيمة كما تظهر في Yalidine.', input: { label: 'Net Client (دج)', value: e.netClient || sug || '' } });
-    if (!r.ok || num(r.value) <= 0) return; if (!e.isActualProfit) e.expectedProfit = e.amount; e.netClient = num(r.value); e.netSource = 'manual'; e.isActualProfit = true; e.amount = realProfit(e.netClient, e.totalCost, e.totalSellerProfit ?? e.sellerProfit); Sheet.close(); commit(); toast('تم تحديث فائدتك الفعلية'); },
+    if (!r.ok || num(r.value) <= 0) return; if (!e.isActualProfit) e.expectedProfit = e.amount; e.netClient = num(r.value); e.netSource = 'manual'; e.isActualProfit = true; e.amount = realProfitOf(e, e.netClient); Sheet.close(); commit(); toast('تم تحديث فائدتك الفعلية'); },
   'entry-track-save': (d) => { const e = S.entries.find(x => sameId(x.id, d.id)); const v = cleanTrack($('#trkIn').value); if (!e || !v) return; e.tracking = v; persist(); openEntry(d.id); },
   'entry-history': async (d) => { const e = S.entries.find(x => sameId(x.id, d.id)); if (!cleanTrack(e?.tracking)) return; const box = $('#histBox'); box.innerHTML = `<div class="sub" style="padding:8px 0">جارٍ التحميل…</div>`;
     try { const h = await Carrier.history(e.tracking); box.innerHTML = h.length ? `<ol class="tl" style="margin-top:12px">${h.map(x => `<li><b>${esc(x.status)}</b><span>${esc(x.place)}${x.date ? ' • ' + esc(x.date) : ''}</span></li>`).join('')}</ol>` : '<div class="sub" style="padding:8px 0">لا يوجد سجل</div>'; }
@@ -2099,6 +2155,7 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const fn = A[b.dataset.act]; if (fn) { e.preventDefault(); fn(b.dataset); }
 });
+let recalcT = null;
 document.addEventListener('input', e => {
   const t = e.target, k = t.dataset?.f;
   if (k && F) { F[k] = t.type === 'checkbox' ? t.checked : t.value; if (k === 'paste') applyParsed(parseCustomerMsg(t.value)); if (k === 'manual') $('#sheetBody').innerHTML = formBody(); updateForm(); }
@@ -2110,6 +2167,7 @@ document.addEventListener('input', e => {
     if (t.dataset.title) $('#appName').textContent = tgt[key] || 'كناش';
     if (t.dataset.render) render();
     if (b === 'carrier.auto' || b === 'carrier.interval') scheduleAutoSync();
+    if (t.dataset.recalc) { clearTimeout(recalcT); recalcT = setTimeout(() => { if (recomputePending()) persist(); }, 400); }
   }
 });
 document.addEventListener('change', e => { if (e.target.dataset && e.target.dataset.pf) { pushChange(e.target); return; } });
@@ -2288,6 +2346,7 @@ async function sendChat() {
 async function boot() {
   document.documentElement.setAttribute('data-theme', localStorage.getItem(LS.theme) || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
   await loadAll();
+  const mig = migrateV5();
   if (/^https?:$/.test(location.protocol)) {
     try { const r = await fetch('/__kanach', { cache: 'no-store' }); const j = await r.json(); SAME_ORIGIN_PROXY = j?.kanach === 'proxy'; } catch {}
     if ('serviceWorker' in navigator && (location.protocol === 'https:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname))) navigator.serviceWorker.register('sw.js').catch(() => {});
@@ -2310,6 +2369,7 @@ async function boot() {
 
   if (!('adsPaused' in (readJSON(LS.settings, {}) || {}))) { S.settings.adsPaused = !S.entries.some(e => e.type === 'ads'); saveSettings(); }
   render();
+  if (mig?.n) toast(`صُحِّحت فائدة ${mig.n} طلبية بأسعار التوصيل الحقيقية: ${mig.delta >= 0 ? 'زادت' : 'نقصت'} بـ ${fmtNum(Math.abs(mig.delta))} دج — التفاصيل في الإعدادات`, { action: { label: 'عرض', fn: () => go('settings', { scrollTo: 'sec-fees' }) } });
   initCloud();
   scheduleAutoSync();
   if (Carrier.configured()) setTimeout(() => syncCarrier({ manual: false }), 1200);

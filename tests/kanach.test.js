@@ -27,11 +27,16 @@ const eq = (name, got, want) => {
     await page.waitForFunction(() => typeof S !== 'undefined' && document.querySelector('#view').children.length);
 
     // ---- الحساب ----
-    eq('calcVonder: سعر الزبون', await page.evaluate(() => { const c = calcVonder({ price: 11700, qty: 1, myProfit: 1048, seller: 1150, extra: 0 }); return [c.totalCost, c.finalPrice, c.sellPrice]; }), [12802, 13850, 15000]);
-    eq('calcVonder: التوصيل على البائع يُخصم', await page.evaluate(() => calcVonder({ price: 11700, qty: 1, myProfit: 1048, seller: 1150, fee: 850, payer: 'me' }).netProfit), 198);
-    eq('calcVonder: التوصيل على الزبون لا يُخصم', await page.evaluate(() => { const c = calcVonder({ price: 11700, qty: 1, myProfit: 1048, seller: 1150, fee: 850, payer: 'customer' }); return [c.netProfit, c.customerPays]; }), [1048, 15850]);
-    eq('الحاسبة العكسية', await page.evaluate(() => Math.round(solveCalc({ mode: 'rev', sell: 15000, price: 11700, qty: 1, seller: 1150, extra: 0, wid: '', type: 'home' }).mpPiece)), 1048);
-    eq('أقصى سعر للمنتج', await page.evaluate(() => Math.round(solveCalc({ mode: 'max', sell: 15000, target: 1048, qty: 1, seller: 1150, extra: 0, wid: '', type: 'home' }).price)), 11700);
+    eq('calcVonder: سعر الزبون', await page.evaluate(() => { const c = calcVonder({ price: 11700, qty: 1, myProfit: 1048, seller: 1150, extra: 0 }); return [c.totalCost, c.finalPrice, c.sellPrice]; }), [12402, 13450, 14600]);
+    // أدرار منزل، سعر 11700: سعر الزبون 14600؛ الزبون يدفع 1000 لـFreeVendor، Yalidine يقتطع 1400 + 0.75% من 15600 = 117 → عليك 517
+    eq('calcVonder: فرق التوصيل + 0.75% (أدرار منزل)', await page.evaluate(() => { const c = calcVonder({ price: 11700, qty: 1, myProfit: 1048, seller: 1150, wid: 1, type: 'home' });
+      return [Math.round(c.sellPrice), c.delivery.fv, c.delivery.yal, c.delivery.cod, c.delivery.cost, c.netProfit, c.customerPays]; }), [14600, 1000, 1400, 117, 517, 531, 15600]);
+    eq('calcVonder: الجزائر مكتب', await page.evaluate(() => { const c = calcVonder({ price: 11700, qty: 1, myProfit: 1048, seller: 1150, wid: 16, type: 'desk' }); return [c.delivery.fv, c.delivery.yal, c.delivery.cost]; }), [300, 400, 100 + 0.0075 * 14900]);
+    eq('ولاية غير متوفرة عند FreeVendor', await page.evaluate(() => calcVonder({ price: 1, qty: 1, myProfit: 1, seller: 0, wid: 56 }).delivery.unavailable), true);
+    eq('Net من النموذج يعطي نفس الفائدة', await page.evaluate(() => { const c = calcVonder({ price: 11700, qty: 1, myProfit: 1048, seller: 1150, wid: 31, type: 'home' });
+      const net = c.sellPrice + c.delivery.fv - c.delivery.yal - c.delivery.cod; return Math.round(realProfit(net, c.totalCost - c.buffer, c.seller)) === Math.round(c.netProfit); }), true);
+    eq('الحاسبة العكسية', await page.evaluate(() => Math.round(solveCalc({ mode: 'rev', sell: 14600, price: 11700, qty: 1, seller: 1150, extra: 0, wid: 1, type: 'home' }).mpPiece)), 1048);
+    eq('أقصى سعر للمنتج يحقق الصافي المطلوب', await page.evaluate(() => { const x = solveCalc({ mode: 'max', sell: 14600, target: 531, qty: 1, seller: 1150, extra: 0, wid: 1, type: 'home' }); return [Math.round(x.price), Math.round(x.netProfit)]; }), [11700, 531]);
     eq('القيمة المتوقعة ونقطة التعادل', await page.evaluate(() => [expectedValue(1000, 0.8, 250), Math.round(breakEvenRate(1000, 250) * 100)]), [750, 20]);
 
     // ---- الولايات ----
@@ -53,14 +58,14 @@ const eq = (name, got, want) => {
     }), [true, true]);
 
     // ---- نموذج الإضافة: لصق + ولاية + خصم التوصيل ----
-    await page.evaluate(() => { S.entries = []; S.deleted = {}; resetSigs(); S.settings.feePayer = 'me'; persist(); render(); });
+    await page.evaluate(() => { S.entries = []; S.deleted = {}; resetSigs(); persist(); render(); });
     await page.click('#fab');
     await page.click('summary:has-text("لصق رسالة الزبون")');
     await page.fill('[data-f=paste]', 'الاسم: سمير\nالهاتف: 0770112233\nالولاية: وهران');
     eq('النموذج: الوصف من الرسالة', await page.inputValue('[data-f=desc]'), 'سمير 0770112233');
     eq('النموذج: الولاية من الرسالة', await page.inputValue('select[data-f=wid]'), '31');
     await page.click('#formSave');
-    eq('الطلبية المحفوظة', await page.evaluate(() => { const e = S.entries[0]; return [e.ship.wilaya, e.yalidineInfo.phone, e.grossProfit, Math.round(e.amount)]; }), ['Oran', '0770112233', 1048, 198]);
+    eq('الطلبية المحفوظة', await page.evaluate(() => { const e = S.entries[0]; return [e.ship.wilaya, e.yalidineInfo.phone, e.grossProfit, e.buffer, Math.round(e.sellPrice), Math.round(e.amount)]; }), ['Oran', '0770112233', 1048, 0, 14600, 684]);
 
     // ---- الحفظ في IndexedDB يبقى بعد إعادة التحميل ----
     await page.waitForTimeout(300);
@@ -69,10 +74,11 @@ const eq = (name, got, want) => {
     eq('IndexedDB بعد إعادة التحميل', await page.evaluate(() => S.entries[0].desc), 'سمير 0770112233');
 
     // ---- المعايرة ----
-    eq('calibrateFees يكتشف خصم التوصيل', await page.evaluate(() => {
-      for (let i = 0; i < 4; i++) S.entries.push({ id: 'c' + i, type: 'vonder', status: 'delivered', isActualProfit: true, netSource: 'excel', sellPrice: 15000, netClient: 14150 - (i % 2) * 10, date: iso(), ship: { wilaya: 'Oran', type: 'home' } });
-      const c = calibrateFees(); return [c.n, c.verdict, c.clean];
-    }), [4, 'me', true]);
+    eq('التحقق من Net الحقيقي يطابق النموذج', await page.evaluate(() => {
+      // وهران منزل: 15000 + 600 − 850 − 0.75%×15600 (117) = 14633
+      for (let i = 0; i < 4; i++) S.entries.push({ id: 'c' + i, type: 'vonder', status: 'delivered', isActualProfit: true, netSource: 'excel', sellPrice: 15000, netClient: 14633 - (i % 2) * 10, date: iso(), ship: { wilaya: 'Oran', type: 'home' } });
+      const c = calibrateFees(); return [c.n, c.verdict];
+    }), [4, 'ok']);
 
     // ---- اتصل اليوم ----
     eq('callList + رسالة واتساب', await page.evaluate(() => {
@@ -92,10 +98,17 @@ const eq = (name, got, want) => {
     {
       const c2 = await browser.newContext(), p2 = await c2.newPage();
       await p2.goto(URL + '__kanach'); // نفس الأصل لنكتب localStorage قبل فتح التطبيق
-      await p2.evaluate(() => localStorage.setItem('dailyEntries_v2', JSON.stringify([{ id: 'old1', type: 'vonder', status: 'pending', date: '2026-10-01', desc: 'قديمة', amount: 1048, myProfit: 1048, quantity: 1 }])));
+      await p2.evaluate(() => {
+        localStorage.setItem('kanach_settings_v1', JSON.stringify({ fixedFee: 400, appFeePct: 6, feePayer: 'unset' }));
+        localStorage.setItem('dailyEntries_v2', JSON.stringify([
+          { id: 'old1', type: 'vonder', status: 'pending', date: '2026-10-01', desc: 'قديمة', amount: 1048, myProfit: 1048, quantity: 1, productPrice: 11700, extraFee: 0, totalCost: 12802, sellPrice: 15000, ship: { wilaya: 'Adrar', type: 'home' } },
+          { id: 'old2', type: 'vonder', status: 'delivered', isActualProfit: true, netClient: 14000, netSource: 'excel', date: '2026-09-01', desc: 'مُسلَّمة', amount: 48, myProfit: 1048, quantity: 1, productPrice: 11700, extraFee: 0, totalCost: 12802, sellerProfit: 1150, sellPrice: 15000 }]));
+      });
       await p2.goto(URL);
       await p2.waitForFunction(() => typeof S !== 'undefined' && S.entries.length);
-      eq('ترحيل localStorage ← IndexedDB', await p2.evaluate(async () => [S.entries[0].id, (await IDB.get('entries'))[0].id, Math.round(S.entries[0].amount)]), ['old1', 'old1', 1048]);
+      eq('ترحيل localStorage ← IndexedDB', await p2.evaluate(async () => [S.entries[0].id, (await IDB.get('entries'))[0].id]), ['old1', 'old1']);
+      // معلّقة أدرار: 1048 + هامش 400 القديم (يبقى له) − (1400 − 1000 + 0.75%×16000=120) = 928 • مُسلَّمة: 14000 − (12802 − 400) − 1150 = 448
+      eq('ترحيل v5: إلغاء 400 وتصحيح الفوائد', await p2.evaluate(() => [S.settings.fixedFee, S.settings.v, Math.round(S.entries[0].amount), Math.round(S.entries[1].amount), readJSON('kanach_mig5', {}).n]), [0, 5, 928, 448, 2]);
       await c2.close();
     }
 
