@@ -11,13 +11,13 @@ const FV_ORIGIN = /^https:\/\/([a-z0-9-]+\.)*freevendor\.space$/i;
 const INBOX_FILE = process.env.KANACH_INBOX || path.join(__dirname, 'inbox.json');
 let inbox = []; try { inbox = JSON.parse(fs.readFileSync(INBOX_FILE, 'utf8')); } catch {}
 const saveInbox = () => fs.writeFile(INBOX_FILE, JSON.stringify(inbox), () => {});
-const STATIC = { '/': 'kanach.html', '/kanach.html': 'kanach.html', '/sw.js': 'sw.js', '/manifest.webmanifest': 'manifest.webmanifest', '/icon.svg': 'icon.svg' };
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml' };
+const STATIC = { '/': 'kanach.html', '/kanach.html': 'kanach.html', '/sw.js': 'sw.js', '/manifest.webmanifest': 'manifest.webmanifest', '/icon.svg': 'icon.svg', '/icon-192.png': 'icon-192.png', '/icon-512.png': 'icon-512.png', '/icon-maskable-512.png': 'icon-maskable-512.png', '/badge-96.png': 'badge-96.png' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png' };
 
 function corsFor(req) {
   const o = req.headers.origin;
   const allow = !ORIGINS.length ? '*' : (o && (ORIGINS.includes(o) || FV_ORIGIN.test(o)) ? o : '');
-  return { ...(allow ? { 'Access-Control-Allow-Origin': allow, Vary: 'Origin' } : {}), 'Access-Control-Allow-Headers': 'Content-Type,X-API-ID,X-API-TOKEN', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS', 'Access-Control-Allow-Private-Network': 'true' };
+  return { ...(allow ? { 'Access-Control-Allow-Origin': allow, Vary: 'Origin' } : {}), 'Access-Control-Allow-Headers': 'Content-Type,X-API-ID,X-API-TOKEN,X-Kanach-Key', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS', 'Access-Control-Allow-Private-Network': 'true' };
 }
 
 http.createServer((req, res) => {

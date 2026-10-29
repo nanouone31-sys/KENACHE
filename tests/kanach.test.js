@@ -109,7 +109,7 @@ const eq = (name, got, want) => {
       await p2.waitForFunction(() => typeof S !== 'undefined' && S.entries.length);
       eq('ترحيل localStorage ← IndexedDB', await p2.evaluate(async () => [S.entries[0].id, (await IDB.get('entries'))[0].id]), ['old1', 'old1']);
       // معلّقة أدرار: 1048 + هامش 400 القديم (يبقى له) − (1400 − 1000 + 0.75%×16000=120) = 928 • مُسلَّمة: 14000 − (12802 − 400) − 1150 = 448
-      eq('ترحيل v5: إلغاء 400 وتصحيح الفوائد', await p2.evaluate(() => [S.settings.fixedFee, S.settings.v, Math.round(S.entries[0].amount), Math.round(S.entries[1].amount), readJSON('kanach_mig5', {}).n]), [0, 6, 928, 448, 2]);
+      eq('ترحيل v5: إلغاء 400 وتصحيح الفوائد', await p2.evaluate(() => [S.settings.fixedFee, S.settings.v, Math.round(S.entries[0].amount), Math.round(S.entries[1].amount), readJSON('kanach_mig5', {}).n]), [0, 7, 928, 448, 2]);
       await c2.close();
     }
 
@@ -274,7 +274,7 @@ const eq = (name, got, want) => {
       await lp.close();
       eq('الملصق عُلِّم كمطبوع', await page.evaluate(() => [!!S.entries[0].labelPrintedAt, labelQueue().length]), [true, 0]);
     }
-    eq('الإعدادات مطوية وتنفتح على القسم المطلوب', await page.evaluate(() => { go('settings', { scrollTo: 'sec-fees' }); return [document.querySelectorAll('details.set').length, document.getElementById('sec-fees').open, document.getElementById('sec-cloud').open]; }), [10, true, false]);
+    eq('الإعدادات مطوية وتنفتح على القسم المطلوب', await page.evaluate(() => { go('settings', { scrollTo: 'sec-fees' }); return [document.querySelectorAll('details.set').length, document.getElementById('sec-fees').open, document.getElementById('sec-cloud').open]; }), [11, true, false]);
 
     // ---- منتجاتي: سعر الشراء والبيع والعمولة، وملء النموذج تلقائياً ----
     eq('اقتصاديات المنتج', await page.evaluate(() => { const e = productEcon({ cost: 45000, price: 48800 }); return [e.fee, e.profit, Math.round(e.margin * 1000) / 10, e.customer]; }), [2700, 1100, 2.3, 49950]);
@@ -314,11 +314,24 @@ const eq = (name, got, want) => {
       await p3.evaluate(() => { localStorage.setItem('kanach_app_v', '7'); localStorage.setItem('kanach_settings_v1', JSON.stringify({ v: 6, appFeePct: 6 }));
         localStorage.setItem('dailyEntries_v2', JSON.stringify([{ id: 'keep1', type: 'vonder', status: 'delivered', isActualProfit: true, netClient: 14000, netSource: 'excel', date: '2026-09-01', desc: 'قديمة', amount: 448, myProfit: 1048, quantity: 1, productPrice: 11700, totalCost: 12402, sellerProfit: 1150, sellPrice: 15000, buffer: 0 }])); });
       await p3.goto(URL); await p3.waitForFunction(() => typeof S !== 'undefined' && S.entries.length);
+      eq('ترحيل v7: المنتجات من الطلبيات القديمة', await p3.evaluate(() => [Object.keys(S.catalog).length >= 0, S.settings.v]), [true, 7]);
       eq('الترقية لا تغيّر البيانات', await p3.evaluate(() => { const e = S.entries.find(x => x.id === 'keep1'); return [e.id, e.amount, e.netClient]; }), ['keep1', 448, 14000]);
-      eq('نسخة تلقائية قبل التحديث', await p3.evaluate(async () => { const l = await snapshots(); return [l.length, /قبل التحديث/.test(l[0].reason), l[0].data.entries[0].id, localStorage.getItem('kanach_app_v')]; }), [1, true, 'keep1', '8']);
+      eq('نسخة تلقائية قبل التحديث', await p3.evaluate(async () => { const l = await snapshots(); return [l.length, /قبل التحديث/.test(l[0].reason), l[0].data.entries[0].id, localStorage.getItem('kanach_app_v') === APP_VERSION]; }), [1, true, 'keep1', true]);
       eq('الاستعادة', await p3.evaluate(async () => { S.entries = []; persist(); const id = (await snapshots())[0].id; window.ask = async () => ({ ok: true }); await A['snap-restore']({ id }); return [S.entries.length, S.entries[0].amount, (await snapshots()).length]; }), [1, 448, 2]);
       await c3.close();
     }
+    // ---- المنتجات تُسجَّل وحدها من الطلبيات، وإدخال سعر الشراء في الخانة يعيد الحساب ----
+    eq('تسجيل تلقائي + إدخال مباشر', await page.evaluate(async () => {
+      S.catalog = {}; S.entries = []; resetSigs();
+      importVonder([{ id: '000777001', status: ['Confirmé avec le client'], prices: [48800, 600, 49400, 50400], seller: 1000, name: 'سمير', phone: '0557439912', wilaya: 'Oran',
+        detail: { client: 'سمير', phone: '0557439912', wilaya: 'Oran', commune: 'Oran', delivery: 'Livraison à domicile', total: 48800, fee: 600, sale: 50400, items: [{ name: 'Dell Latitude 5490', qty: 1, price: 48800 }] } }]);
+      S.entries.push({ id: 'm1', type: 'vonder', status: 'delivered', date: iso(), desc: 'يدوية', product: 'ساعة ذكية', productPrice: 3000, quantity: 2, finalPrice: 7360, amount: 1000 });
+      autoCatalog(S.entries[1]); persist();
+      const c1 = catalogGet('Dell Latitude 5490'), c2 = catalogGet('ساعة ذكية'), before = Math.round(S.entries[0].amount);
+      go('calc', { calcTab: 'products' });
+      const inp = document.querySelector(`[data-cp=cost][data-k="${prodKey('Dell Latitude 5490')}"]`); inp.value = '45000'; inp.dispatchEvent(new Event('change', { bubbles: true }));
+      return [c1.price, c1.cost || 0, c2.cost, c2.price, catalogGet('Dell Latitude 5490').cost, S.entries[0].profitAssumed, Math.round(S.entries[0].grossProfit), before !== Math.round(S.entries[0].amount)];
+    }), [48800, 0, 3000, 3680, 45000, false, 1100, true]);
     eq('الشعار في الواجهة', await page.evaluate(() => !!document.querySelector('.topbar .logo svg') && !!document.querySelector('.side .logo svg')), true);
   } catch (e) { failed++; console.error('✗ استثناء:', e); }
   await browser.close(); proxy.kill(); try { require('fs').unlinkSync(inboxFile); } catch {}

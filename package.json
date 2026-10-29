@@ -1,0 +1,13 @@
+{
+  "name": "kanach",
+  "private": true,
+  "description": "كناش — دفتر الطلبيات والأرباح (FreeVendor + Yalidine)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node tests/kanach.test.js && node tests/worker.test.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

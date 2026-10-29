@@ -1,1 +1,4 @@
 inbox.json
+node_modules/
+.wrangler/
+.dev.vars

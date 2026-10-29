@@ -11,7 +11,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <style>
 :root{
@@ -353,6 +353,11 @@ a.btn{text-decoration:none}
 .btn.wa{background:#1F8B4C;border-color:#1F8B4C;color:#fff}
 .custwarn{margin-top:-2px;margin-bottom:12px}
 .pad-s .kv.key{margin:6px -14px;border-radius:0;padding:12px 14px}
+.pr-row{padding:12px 14px}.pr-name{font-size:14px;line-height:1.4}
+.pr-in{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px;align-items:end}
+.pr-in label span,.pr-out span{display:block;font-size:11.5px;color:var(--ink-3);margin-bottom:3px}
+.pr-in input{height:40px;padding:0 10px;border-radius:10px}.pr-in input.need{border-color:var(--wait);background:var(--wait-soft)}
+.pr-out{text-align:center}.pr-out b{display:block;font-size:16px;line-height:1.3}.pr-out small{font-size:10.5px;color:var(--ink-3)}
 .rbar{position:relative;display:inline-block;width:64px;height:6px;border-radius:3px;background:var(--line);vertical-align:middle;margin-inline-end:6px}
 .rbar i{position:absolute;inset-block:0;inset-inline-start:0;border-radius:3px}
 .rbar s{position:absolute;top:-3px;height:12px;border-inline-start:2px solid var(--ink-2)}
@@ -509,7 +514,7 @@ async function loadAll() {
 }
 
 /* ---- نسخ احتياطية تلقائية داخل المتصفح: قبل كل تحديث لكناش، وأسبوعياً. تُحفظ آخر 6 ويمكن استعادتها بنقرة ---- */
-const APP_VERSION = '8';
+const APP_VERSION = '9';
 async function snapshots() { if (!IDB.db) return []; try { return (await IDB.get('snapshots')) || []; } catch { return []; } }
 async function saveSnapshot(reason) {
   if (!IDB.db) return false;
@@ -1115,7 +1120,8 @@ function fvReader(cfg) {
     if (cfg.inbox) {
       try {
         box.textContent = 'كناش: إرسال…';
-        var res = await fetch(cfg.inbox + '/__kanach/inbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        var hd = { 'Content-Type': 'application/json' }; if (cfg.key) hd['X-Kanach-Key'] = cfg.key;
+        var res = await fetch(cfg.inbox + '/__kanach/inbox', { method: 'POST', headers: hd, body: JSON.stringify(payload) });
         sentOK = res.ok;
       } catch (e) {}
     }
@@ -1148,17 +1154,78 @@ function fvReader(cfg) {
 }
 /* إلى أين يرسل القارئ؟ صندوق الوارد فقط إن كان الوسيط وسيطَ كناش فعلاً (وليس Cloudflare Worker يمرّر إلى Yalidine)،
    وتبويب كناش فقط إن كان كناش مفتوحاً من رابط http/https (صفحات الإنترنت لا تستطيع فتح ملف file:// على حاسوبك) */
-let KANACH_PROXY = '';
+let KANACH_PROXY = '', KANACH_CAPS = null;
 async function detectKanachProxy() {
-  if (SAME_ORIGIN_PROXY) return (KANACH_PROXY = location.origin);
-  const p = (S.carrier.proxy || '').trim().replace(/\/+$/, '');
-  KANACH_PROXY = '';
-  if (!p) return '';
-  try { const r = await fetch(Carrier.base() + '/__kanach', { cache: 'no-store' }); const j = await r.json(); if (j?.kanach === 'proxy') KANACH_PROXY = Carrier.base(); } catch {}
+  const base = SAME_ORIGIN_PROXY ? location.origin : (S.carrier.proxy || '').trim() ? Carrier.base() : '';
+  KANACH_PROXY = ''; KANACH_CAPS = null;
+  if (!base) return '';
+  try { const r = await fetch(base + '/__kanach', { cache: 'no-store' }); const j = await r.json(); if (j?.kanach === 'proxy') { KANACH_PROXY = base; KANACH_CAPS = j; } } catch {}
+  if (KANACH_CAPS?.cloud) IDB.db && IDB.setMany({ cloudBase: KANACH_PROXY }).catch(() => {});
   return KANACH_PROXY;
 }
+/* كناش السحابي (Worker): المفتاح يحمي بياناتك؛ يُحفظ أيضاً في قاعدة المتصفح ليقرأه عامل الإشعارات */
+const cloudKey = () => localStorage.getItem('kanach_cloud_key') || '';
+const kanachCloud = () => !!(KANACH_CAPS?.cloud && cloudKey());
+const kcHeaders = (extra = {}) => ({ 'X-Kanach-Key': cloudKey(), ...extra });
+/* ---- تطبيق على الهاتف + إشعارات (Web Push عبر كناش السحابي) ---- */
+let INSTALL_EVT = null;
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); INSTALL_EVT = e; if (ui.tab === 'settings') render(); });
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+const deviceLabel = () => /android/i.test(navigator.userAgent) ? 'هاتف Android' : isIOS() ? 'iPhone' : /windows/i.test(navigator.userAgent) ? 'حاسوب Windows' : /mac/i.test(navigator.userAgent) ? 'Mac' : 'جهاز';
+const urlB64 = str => { const b = atob((str + '='.repeat((4 - str.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(b, c => c.charCodeAt(0)); };
+async function pushSubscribe() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) throw new Error(isIOS() ? 'على iPhone: ثبّت كناش على الشاشة الرئيسية أولاً (مشاركة ← إضافة إلى الشاشة الرئيسية) ثم افتحه من هناك.' : 'هذا المتصفح لا يدعم الإشعارات.');
+  if (Notification.permission !== 'granted' && await Notification.requestPermission() !== 'granted') throw new Error('رُفض إذن الإشعارات — فعّله من إعدادات المتصفح لهذا الموقع.');
+  const reg = await navigator.serviceWorker.ready;
+  const { key } = await (await fetch(KANACH_PROXY + '/__kanach/push/key')).json();
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64(key) });
+  const r = await kcFetch('/push/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subscription: sub.toJSON(), device: deviceLabel() }) });
+  if (!r.ok) throw new Error('تعذّر تسجيل الجهاز'); localStorage.setItem('kanach_push', '1');
+}
+/* قائمة صغيرة للخادم: الطلبيات المعلّقة برقم تتبع (الاسم والفائدة المتوقعة للإشعار) — بدل تحليل كل البيانات في السحابة */
+async function sendWatch() {
+  if (!kanachCloud() || localStorage.getItem('kanach_srvnotify') !== '1') return;
+  const items = S.entries.filter(e => Q.pending(e) && cleanTrack(e.tracking)).map(e => ({ t: cleanTrack(e.tracking), n: (e.yalidineInfo?.clientName || e.ship?.name || e.desc || '').replace(/0\d{9}/, '').trim(), a: Math.round(e.amount || 0) }));
+  const sig = JSON.stringify(items); if (sig === sendWatch.last) return;
+  try { const r = await kcFetch('/watch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) }); if (r.ok) sendWatch.last = sig; } catch {}
+}
+async function serverNotify(on) {
+  const c = S.carrier, body = { notify: !!on, appName: S.settings.appName };
+  if (on) { if (!Carrier.configured()) throw new Error('اربط Yalidine أولاً (التوصيل ← بيانات الربط).'); body.apiId = c.apiId.trim(); body.apiToken = c.apiToken.trim(); }
+  const r = await kcFetch('/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error('تعذّر حفظ الإعداد'); localStorage.setItem('kanach_srvnotify', on ? '1' : '0'); sendWatch.last = ''; await sendWatch();
+}
+/* عند كل فتح: جدّد اشتراك هذا الجهاز وأرسل مفاتيح Yalidine إن تغيّرت (فقط إن فعّلتَ ذلك) */
+async function setupPushSilently() {
+  try { if (localStorage.getItem('kanach_push') === '1' && 'Notification' in window && Notification.permission === 'granted') await pushSubscribe(); } catch {}
+  try { if (localStorage.getItem('kanach_srvnotify') === '1' && Carrier.configured()) await serverNotify(true); } catch {}
+  try { const r = await kcFetch('/config'); if (r.ok) { ui.srv = await r.json(); if (ui.tab === 'settings') render(); } } catch {}
+}
+function appSection() {
+  const caps = KANACH_CAPS, link = caps?.cloud ? KANACH_PROXY + '/' : '', key = cloudKey(), srv = ui.srv;
+  const pushOn = localStorage.getItem('kanach_push') === '1' && 'Notification' in window && Notification.permission === 'granted';
+  const hint = !caps?.cloud ? 'غير منشور بعد' : !key ? 'أدخل المفتاح' : kanachCloud() && ui.cloud !== 'err' ? `متصل${pushOn ? ' • الإشعارات مفعّلة' : ''}` : 'خطأ';
+  let inner;
+  if (!caps?.cloud) inner = `<div class="note">${ic('info', 18)}<div>لتعمل على الهاتف والحاسوب بنفس البيانات، مع إشعارات التسليم واستقبال طلبيات FreeVendor من أي جهاز، انشر <b>كناش السحابي</b> على حسابك في Cloudflare (مجاني، مرة واحدة — الخطوات في ملف DEPLOY.md). بعدها افتح كناش من رابطه على كل أجهزتك؛ وكل تحديث أضيفه يصلك وحده.</div></div>`;
+  else if (!caps.keySet) inner = `<div class="note bad">${ic('alert', 18)}<div>كناش السحابي منشور لكن <b>KANACH_KEY</b> غير مضبوط. في Cloudflare: Workers ← kanach ← Settings ← Variables and Secrets ← أضف Secret باسم KANACH_KEY.</div></div>`;
+  else inner = `
+    <label class="field"><span>مفتاح كناش السحابي</span><div class="row"><input type="password" class="ltr grow" id="kcKey" autocomplete="off" placeholder="${key ? '•••••••• (محفوظ)' : 'نفس KANACH_KEY في Cloudflare'}"><button class="btn sec2" data-act="kc-save">حفظ</button></div><small>أدخله مرة واحدة على كل جهاز. يحمي بيانات زبائنك.</small></label>
+    ${key ? `<div class="note ${kanachCloud() && ui.cloud !== 'err' ? 'good' : 'bad'}" style="margin-bottom:12px">${ic(kanachCloud() && ui.cloud !== 'err' ? 'check' : 'alert', 18)}<div>${kanachCloud() && ui.cloud !== 'err' ? `البيانات تُزامن عبر كناش السحابي${srv ? ` • ${srv.subs} جهاز للإشعارات` : ''}.` : esc(ui.cloudMsg || 'تحقّق من المفتاح')}</div></div>` : ''}
+    <div class="sw"><div class="tx"><b>رابط كناش</b><span class="n">${esc(link)}</span></div><button class="btn sec2 sm" data-act="copy" data-v="${esc(link)}">${ic('copy', 16)}نسخ</button><a class="btn sm wa" href="https://wa.me/?text=${encodeURIComponent('كناش: ' + link)}" target="_blank" rel="noopener">${ic('wa', 16)}للهاتف</a></div>
+    <div class="sw"><div class="tx"><b>تثبيت كتطبيق</b><span>${isStandalone() ? 'مثبّت على هذا الجهاز ✓' : INSTALL_EVT ? 'أيقونة على الشاشة الرئيسية، يفتح كتطبيق ويعمل بلا إنترنت' : isIOS() ? 'Safari: زر المشاركة ← «إضافة إلى الشاشة الرئيسية»' : 'من قائمة المتصفح ⋮ ← «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية»'}</span></div>${INSTALL_EVT && !isStandalone() ? `<button class="btn sm" data-act="app-install">تثبيت</button>` : ''}</div>
+    ${key ? `<div class="sw"><div class="tx"><b>إشعارات على هذا الجهاز</b><span>${pushOn ? 'مفعّلة ✓ — تصلك حتى وكناش مغلق' : 'تسليم، خروج للتسليم، فشل، إرجاع'}</span></div>${pushOn ? `<button class="btn sec2 sm" data-act="push-test">تجربة</button>` : `<button class="btn sm" data-act="push-on">فعّل</button>`}</div>
+    <div class="sw"><div class="tx"><b>مراقبة Yalidine من السحابة</b><span>كل 15 دقيقة يفحص طلبياتك المعلّقة ويرسل الإشعار. يحتاج حفظ مفاتيح Yalidine في Cloudflare الخاص بك.${srv?.lastCron ? ` آخر فحص: ${timeAgo(srv.lastCron)}.` : ''}</span></div><label class="toggle"><input type="checkbox" id="srvNotify" ${localStorage.getItem('kanach_srvnotify') === '1' ? 'checked' : ''} aria-label="مراقبة من السحابة"><i></i></label></div>` : ''}`;
+  return setSec('sec-app', 'phone', 'كناش على الهاتف والحاسوب', hint, inner);
+}
+async function kcFetch(path, opt = {}) {
+  const r = await fetch(KANACH_PROXY + '/__kanach' + path, { ...opt, cache: 'no-store', headers: kcHeaders(opt.headers || {}) });
+  if (r.status === 401) throw new Error('مفتاح كناش السحابي غير صحيح');
+  return r;
+}
 const kanachApp = () => /^https?:$/.test(location.protocol) ? location.origin + location.pathname : '';
-const fvBookmarklet = () => 'javascript:' + encodeURIComponent(`(${fvReader.toString()})(${JSON.stringify({ inbox: KANACH_PROXY, app: kanachApp() })})`);
+const fvBookmarklet = () => 'javascript:' + encodeURIComponent(`(${fvReader.toString()})(${JSON.stringify({ inbox: KANACH_CAPS?.cloud && !cloudKey() ? '' : KANACH_PROXY, key: KANACH_CAPS?.cloud ? cloudKey() : '', app: kanachApp() })})`);
 
 /* ---- كتالوج المنتجات: سعر الشراء والوزن لكل منتج (FreeVendor لا يعرض سعر شرائك) ---- */
 const prodKey = name => norm(name).replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
@@ -1172,6 +1239,30 @@ function catalogCost(items) {
   let cost = 0, weight = 0; const missing = [];
   (items || []).forEach(it => { const c = catalogGet(it.name); if (c && c.cost > 0) { cost += c.cost * (it.qty || 1); weight += (c.weight || 0) * (it.qty || 1); } else missing.push(it.name); });
   return { cost, weight, known: !!(items && items.length) && !missing.length, missing };
+}
+/* تسجيل المنتج تلقائياً من الطلبية: لا يكتب فوق ما أدخلته، يملأ الفارغ فقط
+   FreeVendor: سعر البيع = «Prix» للقطعة • طلبية يدوية Vonder: الشراء = سعر المنتج، البيع = سعر التطبيق ÷ الكمية • Sonazone: الشراء والبيع من الطلبية */
+function autoCatalog(e) {
+  if (!isOrder(e)) return 0;
+  const q = Math.max(1, e.quantity || 1), now = new Date().toISOString(); let n = 0;
+  const lines = e.items?.length ? e.items.map(i => ({ name: i.name, price: num(i.price) || (e.items.length === 1 ? num(e.finalPrice) / q : 0), cost: 0 }))
+    : e.product ? [e.type === 'sonazone' ? { name: e.product, price: num(e.sonaSellPrice), cost: num(e.sonaBuyPrice) } : { name: e.product, price: e.fromVonder ? num(e.finalPrice) / q : num(e.finalPrice) / q, cost: e.fromVonder || e.profitAssumed ? 0 : num(e.productPrice) }] : [];
+  lines.forEach(l => {
+    const k = prodKey(l.name); if (!k) return;
+    const c = S.catalog[k], add = { ...(c || { name: String(l.name).slice(0, 160), auto: true }) };
+    let ch = !c;
+    if (!(add.price > 0) && l.price > 0) { add.price = Math.round(l.price); ch = true; }
+    if (!(add.cost > 0) && l.cost > 0) { add.cost = Math.round(l.cost); ch = true; }
+    if (ch) { add.updatedAt = now; S.catalog[k] = add; n++; }
+  });
+  return n;
+}
+/* ترحيل v7: سجّل منتجات كل الطلبيات الموجودة في «منتجاتي» — الطلبيات نفسها لا تتغير */
+function migrateV7() {
+  if (num(S.settings.v) >= 7) return 0;
+  let n = 0; S.entries.forEach(e => { n += autoCatalog(e); });
+  S.settings.v = 7; saveSettings(); if (n) persist();
+  return n;
 }
 /* تسعير طلبية FreeVendor:
    سعر التطبيق (finalPrice) = «Prix total de la commande» • سعر الزبون (sellPrice) = سعر التطبيق + فائدة البائع
@@ -1222,6 +1313,7 @@ function importVonder(rows) {
       finalPrice: productTotal, sellPrice: productTotal + seller, netClient: 0, isActualProfit: false, netSource:'', sonaBuyPrice:0, sonaSellPrice:0, sonaQuantity:1,
       yalidineInfo: { clientName: name, phone, wilaya: ship.wilaya, commune: ship.communeFV } };
     const cc = priceFvEntry(e);
+    autoCatalog(e);
     cc.missing.forEach(n => out.missing.add(n));
     S.entries.unshift(e); out.ids.push(e.id);
     if (riskyCustomer(phone)) out.risky++;
@@ -1446,9 +1538,9 @@ async function autoPush() {
 /* ---- صندوق الوارد: الوسيط المحلي يستقبل ما يرسله قارئ FreeVendor ---- */
 let inboxTimer = null;
 async function pollInbox() {
-  if (!KANACH_PROXY) return;
+  if (!KANACH_PROXY || (KANACH_CAPS?.cloud && !cloudKey())) return;
   const after = localStorage.getItem('kanach_inbox_after') || '';
-  let j; try { const r = await fetch(`${KANACH_PROXY}/__kanach/inbox?after=${encodeURIComponent(after)}`, { cache: 'no-store' }); if (!r.ok) return; j = await r.json(); } catch { return; }
+  let j; try { const r = await fetch(`${KANACH_PROXY}/__kanach/inbox?after=${encodeURIComponent(after)}`, { cache: 'no-store', headers: KANACH_CAPS?.cloud ? kcHeaders() : {} }); if (!r.ok) return; j = await r.json(); } catch { return; }
   const items = (j.items || []).filter(x => x.id > after);
   if (!items.length) return;
   for (const it of items) { localStorage.setItem('kanach_inbox_after', it.id); receiveFv(it.payload || { rows: [] }); }
@@ -2232,16 +2324,16 @@ function myProductsList() {
 }
 function viewMyProducts() {
   const q = norm(ui.prodQ || ''), all = myProductsList(), list = all.filter(p => !q || norm(p.name).includes(q))
-    .sort((a, b) => (!!(a.c?.cost && a.c?.price) - !!(b.c?.cost && b.c?.price)) || ((b.st?.orders || 0) - (a.st?.orders || 0)) || a.name.localeCompare(b.name, 'ar'));
+    .sort((a, b) => ((a.c?.cost > 0) - (b.c?.cost > 0)) || ((b.st?.orders || 0) - (a.st?.orders || 0)) || a.name.localeCompare(b.name, 'ar'));
   const missing = all.filter(p => !(p.c?.cost > 0)).length;
   return `<div class="row" style="gap:8px;margin-bottom:12px"><div class="search grow"><span>${ic('search', 18)}</span><input type="search" id="prodSearch" placeholder="ابحث في منتجاتك…" value="${esc(ui.prodQ || '')}"></div>
     <button class="btn" data-act="prod-new">${ic('plus', 18)}<span>منتج</span></button></div>
-  ${missing ? `<div class="note warn" style="margin-bottom:12px">${ic('alert', 18)}<div><b>${missing}</b> منتج بلا سعر شراء — فائدته مقدَّرة بالقيمة الافتراضية. أكمل سعره لتصبح الأرقام حقيقية.</div></div>` : ''}
-  <div id="prodList">${list.length ? `<div class="card list">${list.map(p => { const c = p.c, ok = c?.cost > 0 && c?.price > 0, e = ok ? productEcon(c) : null;
-    return `<button class="oc" data-act="prod-edit" data-k="${esc(p.key)}"><span class="main"><span class="t">${esc(p.name)}</span>
-      <span class="s">${c?.cost ? `<span>شراء <b class="n">${fmtNum(c.cost)}</b></span>` : '<span class="wait">بلا سعر شراء</span>'}${c?.price ? `<span>بيع <b class="n">${fmtNum(c.price)}</b></span>` : ''}${e ? `<span>عمولة ${fmtNum(e.pct)}% <b class="n">${fmtNum(e.fee)}</b></span>` : ''}${c?.weight ? `<span>${c.weight} كغ</span>` : ''}</span>
-      ${p.st ? `<span class="bd"><span class="badge">${p.st.orders} طلبية</span>${p.st.rate != null ? `<span class="badge ${p.st.rate < p.st.be ? 'neg' : 'pos'}">تسليم ${Math.round(p.st.rate * 100)}%</span>` : ''}</span>` : ''}</span>
-      <span class="amt ${e ? (e.profit > 0 ? 'pos' : 'neg') : 'muted'}">${e ? money(e.profit) : '—'}<small>${e ? `فائدتي • ${e.margin != null ? (e.margin * 100).toFixed(1) + '%' : ''}` : 'أكمل السعر'}</small></span></button>`; }).join('')}</div>`
+  <div class="note ${missing ? 'warn' : 'good'}" style="margin-bottom:12px">${ic(missing ? 'alert' : 'check', 18)}<div>${missing ? `<b>${missing}</b> منتج ينتظر سعر الشراء. تظهر المنتجات هنا وحدها من طلبياتك — أدخل السعر في الخانة فقط، ويُحفظ ويُعاد الحساب فوراً.` : 'كل منتجاتك لها سعر شراء — الأرقام حقيقية.'}</div></div>
+  <div id="prodList">${list.length ? `<div class="card list">${list.map(p => { const c = p.c || {}, ok = c.cost > 0 && c.price > 0, e = ok ? productEcon(c) : null;
+    return `<div class="pr-row"><div class="row" style="gap:8px"><b class="grow pr-name">${esc(p.name)}</b>${p.st ? `<span class="badge">${p.st.orders} طلبية</span>` : ''}<button class="iconbtn" data-act="prod-edit" data-k="${esc(p.key)}" aria-label="تفاصيل">${ic('edit', 18)}</button></div>
+      <div class="pr-in"><label><span>سعر الشراء</span><input type="number" inputmode="decimal" data-cp="cost" data-k="${esc(p.key)}" value="${c.cost || ''}" placeholder="أدخله" class="${c.cost > 0 ? '' : 'need'}"></label>
+        <label><span>سعر البيع</span><input type="number" inputmode="decimal" data-cp="price" data-k="${esc(p.key)}" value="${c.price || ''}" placeholder="—"></label>
+        <div class="pr-out"><span>فائدتي</span><b class="${e ? (e.profit > 0 ? 'pos' : 'neg') : 'muted'}">${e ? fmtNum(e.profit) : '—'}</b><small>${e ? `عمولة ${fmtNum(e.fee)}${e.margin != null ? ` • ${(e.margin * 100).toFixed(1)}%` : ''}` : ''}</small></div></div></div>`; }).join('')}</div>`
     : `<div class="card empty">${ic('box', 32)}<b>${q ? 'لا نتائج' : 'لا منتجات بعد'}</b>${q ? '' : 'أضف منتجاتك مع سعر الشراء والبيع، أو ستظهر وحدها من طلبيات FreeVendor.'}</div>`}</div>`;
 }
 let PE = null;
@@ -2270,6 +2362,14 @@ function updatePE() {
       <div class="kv"><span>سعر الزبون</span><b>${money(e.customer)}</b></div>
       <div class="kv"><span>صافي بعد التوصيل <small class="muted">(متوسط الولايات)</small></span><b class="${e.net >= 0 ? 'pos' : 'neg'}">${money(e.net)}</b></div>` : ''}
     ${e.suggest && (!e.price || e.price < e.suggest) ? `<div class="sub" style="margin-top:6px">لتربح ${moneyT(num(S.settings.defProfit))} في القطعة: سعر البيع ≥ <b>${moneyT(e.suggest)}</b> <button class="lnk" data-act="pe-suggest" data-v="${e.suggest}">استعمله</button></div>` : ''}</div>`;
+}
+function saveInlinePrice(el) {
+  const k = el.dataset.k, f = el.dataset.cp, name = myProductsList().find(p => p.key === k)?.name || S.catalog[k]?.name || k;
+  S.catalog[k] = { ...(S.catalog[k] || { name }), [f]: num(el.value), auto: false, updatedAt: new Date().toISOString() };
+  let m = 0; if (f === 'cost') S.entries.forEach(e => { if (e.fromVonder && e.items?.length && e.status !== 'returned' && e.items.some(i => prodKey(i.name) === k)) { priceFvEntry(e); m++; } });
+  persist();
+  const box = document.createElement('div'); box.innerHTML = viewMyProducts(); $('#prodList').replaceWith(box.querySelector('#prodList'));
+  toast(`حُفظ${m ? ` • أُعيد حساب ${m} طلبية` : ''}`);
 }
 function savePE() {
   if (!PE) return;
@@ -2435,6 +2535,7 @@ function viewSettings() {
   const s = S.settings, jb = !!localStorage.getItem(LS.jbKey), hasKey = !!localStorage.getItem(LS.apiKey);
   const num_ = (k, l) => `<label class="field"><span>${l}</span><input type="number" inputmode="decimal" data-bind="settings.${k}" data-num value="${num(s[k])}"></label>`;
   return `<div class="stack">
+  ${appSection()}
   ${setSec('sec-general', 'sliders', 'عام والقيم الافتراضية', `${esc(s.appName)} • فائدتي ${fmtNum(num(s.defProfit))} • Taxe ${fmtNum(num(s.defTaxe))}`, `<div><label class="field"><span>اسم التطبيق</span><input type="text" data-bind="settings.appName" data-title value="${esc(s.appName)}" maxlength="30"></label></div>
     <div class="sw" style="padding-top:0"><div class="tx"><b>الإعلانات موقوفة مؤقتاً</b><span>يخفي كل ما يخص الإعلانات (بطاقات، تحليل، نوع الحركة). الأرقام السابقة تبقى محسوبة.</span></div><label class="toggle"><input type="checkbox" data-bind="settings.adsPaused" data-render ${s.adsPaused ? 'checked' : ''} aria-label="إيقاف الإعلانات"><i></i></label></div><hr class="sep"><div class="sub" style="margin:2px 0 12px">تُستعمل عند أول طلبية؛ بعدها يقترح التطبيق قيم آخر طلبية.</div>
     <div class="two">${num_('defPrice', 'سعر المنتج')}${num_('defProfit', 'فائدتي / قطعة')}</div><div class="two">${num_('defSeller', 'فائدة البائع')}${num_('defTaxe', 'Taxe retour')}</div>`)}
@@ -2445,7 +2546,8 @@ function viewSettings() {
       <li>اسحب الزر التالي إلى شريط المفضلة (مرة واحدة)</li><li>في freevendor.space افتح «Gérer les commandes» واضغط الزر: تُقرأ الطلبيات «Confirmé avec le client» وتصل هنا وحدها خلال ثوانٍ</li></ol>
     <div class="row wrap-r" style="margin:0 0 12px"><a class="btn" id="vonderBm" href="#" draggable="true" style="display:inline-flex" onclick="event.preventDefault();toast('اسحب الزر إلى شريط المفضلة، لا تضغط عليه هنا.')">⇪ كناش ← FreeVendor</a>
       <span class="badge ${KANACH_PROXY ? 'pos' : 'info'}">${KANACH_PROXY ? 'تصل الطلبيات وحدها (الوسيط المحلي)' : kanachApp() ? 'عبر زر «افتح كناش وأرسل»' : 'عبر زر «نسخ» ثم «لصق من FreeVendor»'}</span></div>
-    <button class="btn sec2 block" style="margin-bottom:10px" data-act="fv-paste">${ic('download', 18)}<span>لصق من FreeVendor</span></button>
+    <div class="row wrap-r" style="margin-bottom:10px"><button class="btn sec2 grow" data-act="fv-paste">${ic('download', 18)}<span>لصق من FreeVendor</span></button><button class="btn sec2 grow" data-act="copy-bm">${ic('copy', 18)}<span>نسخ كود الزر (للهاتف)</span></button></div>
+    <div class="sub" style="margin:-4px 0 10px">على الهاتف: أضف أي صفحة إلى المفضلة، عدّل اسمها إلى «كناش» والصق الكود مكان الرابط. في FreeVendor اكتب «كناش» في شريط العنوان واضغط على المفضلة.</div>
     <div class="sw"><div class="tx"><b>رفع تلقائي إلى Yalidine</b><span>تُنشأ الطرود فور وصول الطلبيات — فقط ما طابقت ولايته وبلديته (أو مكتبه) بثقة كاملة وهاتفه صالح وزبونه بلا سوابق. الباقي ينتظر مراجعتك.</span></div><label class="toggle"><input type="checkbox" data-bind="settings.autoPush" data-render ${s.autoPush ? 'checked' : ''} aria-label="رفع تلقائي"><i></i></label></div>
     <div class="sw"><div class="tx"><b>Livraison gratuite عند Yalidine</b><span>«Prix de vente» من FreeVendor يشمل التوصيل، فيدفع الزبون المبلغ نفسه ويقتطع Yalidine رسومه منه. أوقفه فقط إن كنت تريد أن يضيف Yalidine سعره فوق المبلغ.</span></div><label class="toggle"><input type="checkbox" data-bind="settings.fvFreeShipping" ${s.fvFreeShipping !== false ? 'checked' : ''} aria-label="Livraison gratuite"><i></i></label></div>
     <div class="two" style="margin-top:10px"><label class="field"><span>الوزن الافتراضي (كغ)</span><input type="number" inputmode="decimal" step="0.1" data-bind="settings.defWeight" data-num value="${num(s.defWeight)}"><small>يُستعمل إن لم يُحدَّد وزن المنتج.</small></label>
@@ -2461,7 +2563,8 @@ function viewSettings() {
   ${setSec('sec-goals', 'chart', 'الأهداف المالية', `هدف الشهر ${num(s.monthGoal) ? moneyT(num(s.monthGoal)) : 'غير محدد'} • ${moneyT(num(s.targetEV))} لكل طرد`, `
     <div class="two"><label class="field"><span>الهدف الصافي للشهر (دج)</span><input type="number" inputmode="decimal" data-bind="settings.monthGoal" data-num value="${num(s.monthGoal) || ''}" placeholder="100000"></label>
     <label class="field"><span>ربح مستهدف لكل طرد مُرسَل (دج)</span><input type="number" inputmode="decimal" data-bind="settings.targetEV" data-num value="${num(s.targetEV)}"><small>يُستعمل لتقييم المنتجات واقتراح الأسعار.</small></label></div>`)}
-  ${setSec('sec-cloud', 'cloud', 'المزامنة بين الأجهزة', jb ? (ui.cloud === 'err' ? 'خطأ في المزامنة' : 'مفعّلة') : 'غير مفعّلة', `
+  ${setSec('sec-cloud', 'cloud', 'المزامنة بين الأجهزة', kanachCloud() ? 'عبر كناش السحابي' : jb ? (ui.cloud === 'err' ? 'خطأ في المزامنة' : 'JSONBin') : 'غير مفعّلة', `
+    ${kanachCloud() ? `<div class="note good" style="margin:10px 0">${ic('check', 18)}<div>المزامنة تتم عبر <b>كناش السحابي</b> (القسم الأول في الإعدادات). JSONBin لم يعد ضرورياً.</div></div><button class="btn sec2 block" data-act="cloud-up">${ic('refresh', 18)}<span>زامن الآن</span></button><hr class="sep"><div class="sub" style="margin-bottom:6px">بديل قديم: JSONBin</div>` : ''}
     <div class="note ${ui.cloud === 'err' ? 'bad' : ui.cloud === 'ok' ? 'good' : ''}" style="margin:10px 0">${ic('cloud', 18)}<div>${jb ? esc(ui.cloudMsg || 'مفعّلة — تُدمج التغييرات حركةً بحركة بين أجهزتك: لا يضيع تعديل جهاز بسبب جهاز آخر، وتُرفع بعد 3 ثوانٍ وتُسحب كل دقيقة ونصف.') : 'غير مفعّلة. أدخل مفتاح JSONBin ومعرّف الـBin لتعمل على الهاتف والحاسوب بنفس البيانات — بلا ضغط أزرار.'}</div></div>
     <div class="two"><label class="field"><span>X-Master-Key</span><input type="password" class="ltr" autocomplete="off" id="jbKey" placeholder="${jb ? '•••••••• (محفوظ)' : '$2a$10$…'}"></label><label class="field"><span>Bin ID</span><input type="text" class="ltr" autocomplete="off" id="jbId" value="${esc(localStorage.getItem(LS.jbId) || '')}"></label></div>
     <div class="row wrap-r"><button class="btn sec2 grow" data-act="cloud-save-cfg">حفظ الإعداد</button>${jb ? `<button class="btn sec2 grow" data-act="cloud-up">${ic('upload', 18)}<span>زامن الآن</span></button><button class="btn sec2 grow" data-act="cloud-down">${ic('download', 18)}<span>استبدال بنسخة السحابة</span></button>` : ''}</div>
@@ -2494,6 +2597,7 @@ const AFTER = {
   },
   carrier() { const d = $('#setupAcc'); if (d) d.ontoggle = () => { ui.openSetup = d.open; }; },
   settings() {
+    const sn = $('#srvNotify'); if (sn) sn.onchange = async e => { try { await serverNotify(e.target.checked); toast(e.target.checked ? 'السحابة تراقب Yalidine الآن' : 'أُوقفت المراقبة'); } catch (err) { e.target.checked = !e.target.checked; toast(err.message, { tone: 'bad' }); } };
     snapshots().then(list => { const el = $('#snapList'); if (!el) return;
       el.innerHTML = list.length ? `<div class="card list">${list.map(x => `<div class="pad-s row"><div class="grow"><b style="font-size:13.5px">${esc(x.reason)}</b><div class="sub">${new Date(x.ts).toLocaleString('ar-DZ', { dateStyle: 'short', timeStyle: 'short' })} • ${x.n} حركة</div></div>
         <button class="btn ghost sm" data-act="snap-dl" data-id="${x.id}" aria-label="تنزيل">${ic('download', 16)}</button><button class="btn sec2 sm" data-act="snap-restore" data-id="${x.id}">استعادة</button></div>`).join('')}</div>` : 'لا توجد نسخ بعد.'; });
@@ -2677,6 +2781,7 @@ function saveForm() {
     if (wname || phone || F.cname) e.yalidineInfo = { ...(old?.yalidineInfo || {}), clientName: old?.yalidineInfo?.clientName || F.cname || '', phone: old?.yalidineInfo?.phone || phone, wilaya: old?.yalidineInfo?.wilaya || wname, commune: old?.yalidineInfo?.commune || '' };
   }
   if (old) Object.assign(old, e); else S.entries.unshift(e);
+  autoCatalog(old || e);
   const added = !old, id = e.id;
   Sheet.close(); commit();
   toast(old ? 'تم حفظ التعديلات' : (t === 'vonder' ? `تم الحفظ • سعر الزبون ${fmtNum(e.sellPrice)} دج` : 'تم الحفظ'), added ? { action: { label: 'تراجع', fn: () => { S.entries = S.entries.filter(x => !sameId(x.id, id)); commit(); } } } : {});
@@ -2756,6 +2861,18 @@ const A = {
     $('#sheetBody').innerHTML = formBody(); updateForm(); },
   'call-open': () => openCallList(),
   'labels-open': () => openLabels(),
+  'copy-bm': () => copyText(fvBookmarklet()),
+  'kc-save': async () => {
+    const v = ($('#kcKey')?.value || '').trim(); if (!v) { toast('أدخل المفتاح'); return; }
+    localStorage.setItem('kanach_cloud_key', v);
+    try { const r = await kcFetch('/config'); if (!r.ok) throw new Error('HTTP ' + r.status); ui.srv = await r.json(); }
+    catch (e) { localStorage.removeItem('kanach_cloud_key'); toast(e.message, { tone: 'bad' }); render(); return; }
+    if (IDB.db) IDB.setMany({ cloudKey: v, cloudBase: KANACH_PROXY }).catch(() => {});
+    initCloud(); scheduleInbox(); await cloudSync({ manual: true }); render();
+  },
+  'app-install': async () => { if (!INSTALL_EVT) return; INSTALL_EVT.prompt(); await INSTALL_EVT.userChoice.catch(() => {}); INSTALL_EVT = null; render(); },
+  'push-on': async () => { try { await pushSubscribe(); toast('فُعّلت الإشعارات على هذا الجهاز'); const r = await kcFetch('/config'); if (r.ok) ui.srv = await r.json(); } catch (e) { toast(e.message, { tone: 'bad' }); } render(); },
+  'push-test': async () => { try { const r = await (await kcFetch('/push/test', { method: 'POST' })).json(); toast(r.sent ? 'أُرسل إشعار تجريبي — سيظهر خلال ثوانٍ' : 'لم يصل لأي جهاز — أعد تفعيل الإشعارات', r.sent ? {} : { tone: 'bad' }); } catch (e) { toast(e.message, { tone: 'bad' }); } },
   'calc-tab': (d) => { ui.calcTab = d.v; render(); },
   'prod-new': () => openProductEdit(''),
   'prod-edit': (d) => openProductEdit(d.k),
@@ -2932,7 +3049,7 @@ document.addEventListener('input', e => {
     if (t.dataset.recalc) { clearTimeout(recalcT); recalcT = setTimeout(() => { if (recomputePending()) persist(); }, 400); }
   }
 });
-document.addEventListener('change', e => { if (e.target.dataset?.st !== undefined) { updateSettleSel(); return; } if (e.target.dataset?.f === 'product' && F) { applyCatalogToForm(); return; } if (e.target.dataset && e.target.dataset.pf) { pushChange(e.target); return; } if (e.target.dataset?.renderChange !== undefined) render(); });
+document.addEventListener('change', e => { if (e.target.dataset?.cp) { saveInlinePrice(e.target); return; } if (e.target.dataset?.st !== undefined) { updateSettleSel(); return; } if (e.target.dataset?.f === 'product' && F) { applyCatalogToForm(); return; } if (e.target.dataset && e.target.dataset.pf) { pushChange(e.target); return; } if (e.target.dataset?.renderChange !== undefined) render(); });
 document.addEventListener('input', e => { if (e.target.dataset && e.target.dataset.pf === 'addr' && PUSH) pushChange(e.target); });
 document.addEventListener('change', e => { if (e.target.id === 'yalFile') handleYalFile(e.target.files[0]); if (e.target.id === 'restoreFile') handleRestore(e.target.files[0]); });
 
@@ -3000,7 +3117,21 @@ async function exportCrmXlsx() {
 
 let cloudTimer = null, cloudPollTimer = null;
 const CLOUD = { busy: false, again: false, dirty: false };
-const cloudReady = () => !!(localStorage.getItem(LS.jbKey) && localStorage.getItem(LS.jbId));
+const jsonbinReady = () => !!(localStorage.getItem(LS.jbKey) && localStorage.getItem(LS.jbId));
+const cloudReady = () => kanachCloud() || jsonbinReady();
+/* مزوّد السحابة: كناش السحابي (Worker) إن توفّر ومفتاحه مضبوط، وإلا JSONBin */
+async function cloudGet() {
+  if (kanachCloud()) { const r = await kcFetch('/sync'); if (!r.ok) throw new Error(`HTTP ${r.status}`); return { data: await r.json(), rev: r.headers.get('X-Kanach-Rev') }; }
+  return { data: await jbCall('GET'), rev: null };
+}
+async function cloudPut(body, rev) {
+  if (kanachCloud()) {
+    const r = await kcFetch('/sync', { method: 'PUT', headers: { 'Content-Type': 'application/json', ...(rev != null ? { 'If-Match': rev } : {}) }, body: JSON.stringify(body) });
+    if (r.status === 409) { const e = new Error('conflict'); e.conflict = true; throw e; }
+    if (!r.ok) throw new Error(`HTTP ${r.status}`); return;
+  }
+  await jbCall('PUT', body);
+}
 function initCloud() {
   cloudHook = () => { if (!cloudReady()) return; CLOUD.dirty = true; clearTimeout(cloudTimer); ui.cloud = 'busy'; cloudTimer = setTimeout(() => { cloudTimer = null; cloudSync(); }, 3000); };
   if (cloudReady()) cloudSync();
@@ -3040,25 +3171,26 @@ function applyMerged(remote) {
 }
 /* مزامنة واحدة: اسحب ← ادمج ← ارفع فقط إن كان عندنا ما ليس في السحابة */
 async function cloudSync({ manual = false } = {}) {
-  if (!cloudReady()) { if (manual) toast('أدخل بيانات JSONBin أولاً', { tone: 'bad' }); return; }
+  if (!cloudReady()) { if (manual) toast(KANACH_CAPS?.cloud ? 'أدخل مفتاح كناش السحابي أولاً' : 'أدخل بيانات JSONBin أولاً', { tone: 'bad' }); return; }
   if (CLOUD.busy) { CLOUD.again = true; return; }
   CLOUD.busy = true; ui.cloud = 'busy'; if (manual) render();
   try {
-    const remote = await jbCall('GET'), hasRemote = Array.isArray(remote?.entries);
+    const got = await cloudGet(), remote = got.data, hasRemote = Array.isArray(remote?.entries);
     const changedHere = hasRemote ? applyMerged(remote) : false;
     if (changedHere) { writeLocal(); if (remote.device && remote.device !== deviceId()) pingUpdate('كناش', 'وصل تحديث من جهاز آخر'); }
     const mine = { entries: S.entries, budgetExp: S.budgetExp, budgets: S.budgets, deleted: S.deleted, deletedB: S.deletedB, catalog: S.catalog };
     if (!hasRemote || stateKey(mine) !== stateKey(remote)) {
       const stamp = new Date().toISOString();
-      await jbCall('PUT', { ...mine, updatedAt: stamp, device: deviceId(), v: 4 });
+      await cloudPut({ ...mine, updatedAt: stamp, device: deviceId(), v: 4 }, got.rev);
       localStorage.setItem(LS.cloudSeen, stamp);
     }
-    CLOUD.dirty = false;
+    CLOUD.dirty = false; sendWatch();
     ui.cloud = 'ok'; ui.cloudMsg = `متزامن • ${S.entries.length} حركة • ${new Date().toLocaleTimeString('ar-DZ', { hour: '2-digit', minute: '2-digit' })}`;
     if (manual) toast('تمت المزامنة');
     if (changedHere || manual) render(); else updateCloudBadge();
   } catch (e) {
-    ui.cloud = 'err'; ui.cloudMsg = 'فشلت المزامنة — تحقّق من المفتاح والمعرّف والإنترنت'; if (manual) toast(ui.cloudMsg, { tone: 'bad' }); updateCloudBadge();
+    if (e.conflict) { CLOUD.again = true; return; } // جهاز آخر رفع للتوّ: نعيد الدمج فوراً
+    ui.cloud = 'err'; ui.cloudMsg = kanachCloud() ? `فشلت المزامنة — ${e.message}` : 'فشلت المزامنة — تحقّق من المفتاح والمعرّف والإنترنت'; if (manual) toast(ui.cloudMsg, { tone: 'bad' }); updateCloudBadge();
   } finally {
     CLOUD.busy = false;
     if (CLOUD.again) { CLOUD.again = false; setTimeout(() => cloudSync(), 500); }
@@ -3068,7 +3200,7 @@ function updateCloudBadge() { const b = $('#btnCloud'); if (b) b.innerHTML = `${
 /* استبدال كامل بنسخة السحابة (زر «تحميل الآن» فقط) */
 async function cloudReplace() {
   try {
-    const j = await jbCall('GET'); if (!Array.isArray(j.entries)) throw new Error('empty');
+    const j = (await cloudGet()).data; if (!Array.isArray(j.entries)) throw new Error('empty');
     S.entries = j.entries; S.budgetExp = j.budgetExp || []; S.budgets = j.budgets || {}; S.deleted = j.deleted || {}; S.deletedB = j.deletedB || {}; S.catalog = j.catalog || S.catalog;
     resetSigs(); writeLocal(); CLOUD.dirty = false; ui.cloud = 'ok'; ui.cloudMsg = `مُستبدلة من السحابة • ${S.entries.length} حركة`; toast('تم التحميل من السحابة');
   } catch { ui.cloud = 'err'; ui.cloudMsg = 'فشل التحميل'; toast(ui.cloudMsg, { tone: 'bad' }); }
@@ -3110,7 +3242,7 @@ async function boot() {
   document.documentElement.setAttribute('data-theme', localStorage.getItem(LS.theme) || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
   await loadAll();
   await autoSnapshot(); // قبل أي ترحيل: البيانات كما كانت تبقى قابلة للاستعادة
-  const mig = migrateV5(); migrateV6();
+  const mig = migrateV5(); migrateV6(); migrateV7();
   if (/^https?:$/.test(location.protocol)) {
     try { const r = await fetch('/__kanach', { cache: 'no-store' }); const j = await r.json(); SAME_ORIGIN_PROXY = j?.kanach === 'proxy'; } catch {}
     if ('serviceWorker' in navigator && (location.protocol === 'https:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname))) navigator.serviceWorker.register('sw.js').catch(() => {});
@@ -3134,9 +3266,11 @@ async function boot() {
   if (!('adsPaused' in (readJSON(LS.settings, {}) || {}))) { S.settings.adsPaused = !S.entries.some(e => e.type === 'ads'); saveSettings(); }
   render();
   if (mig?.n) toast(`صُحِّحت فائدة ${mig.n} طلبية بأسعار التوصيل الحقيقية: ${mig.delta >= 0 ? 'زادت' : 'نقصت'} بـ ${fmtNum(Math.abs(mig.delta))} دج — التفاصيل في الإعدادات`, { action: { label: 'عرض', fn: () => go('settings', { scrollTo: 'sec-fees' }) } });
+  await detectKanachProxy();
   initCloud();
   scheduleAutoSync();
-  detectKanachProxy().then(() => { scheduleInbox(); if (ui.tab === 'settings') render(); });
+  scheduleInbox(); if (ui.tab === 'settings') render();
+  if (kanachCloud()) { IDB.db && IDB.setMany({ cloudKey: cloudKey(), cloudBase: KANACH_PROXY }).catch(() => {}); setupPushSilently(); }
   if (Carrier.configured()) setTimeout(() => syncCarrier({ manual: false }), 1200);
   document.addEventListener('visibilitychange', () => {
     const m = num(S.carrier.interval);

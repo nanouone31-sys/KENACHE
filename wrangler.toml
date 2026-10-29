@@ -1,0 +1,23 @@
+# كناش السحابي — انظر DEPLOY.md
+name = "kanach"
+main = "worker/index.js"
+compatibility_date = "2025-09-01"
+
+# التطبيق نفسه (kanach.html, sw.js, manifest, icon) يُخدَم كملفات ثابتة — الباقي في .assetsignore
+[assets]
+directory = "."
+binding = "ASSETS"
+html_handling = "none"
+not_found_handling = "none"
+
+[[durable_objects.bindings]]
+name = "KANACH"
+class_name = "KanachStore"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["KanachStore"]
+
+# فحص Yalidine للإشعارات كل 15 دقيقة
+[triggers]
+crons = ["*/15 * * * *"]
