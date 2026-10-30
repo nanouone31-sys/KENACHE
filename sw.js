@@ -1,6 +1,6 @@
 // كناش — يعمل بلا إنترنت، ويعرض إشعارات التسليم حتى والتطبيق مغلق.
 // الصفحة: الشبكة أولاً (لتصلك التحديثات فوراً)، ثم النسخة المحفوظة عند الانقطاع. لا يُخزَّن أي طلب API.
-const CACHE = 'kanach-v10';
+const CACHE = 'kanach-v11';
 const SHELL = ['./kanach.html', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png', './badge-96.png'];
 
 self.addEventListener('install', e => {

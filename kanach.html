@@ -348,6 +348,8 @@ section[id^="sec-"]>b:first-child,.card.pad>b:first-child{font-size:15.5px}
 .wt-wrap{max-height:420px;overflow:auto}
 .call{display:flex;gap:12px;align-items:center;padding:14px 16px}
 .call .grow b{display:block;font-size:14.5px}
+.cf .who{display:flex;justify-content:space-between;gap:10px;align-items:baseline}.cf .who b{display:inline}.cf .amt{font-weight:700;white-space:nowrap;font-size:15px}
+.cf-act{display:grid;grid-template-columns:1fr 1fr;gap:6px;width:100%;margin-top:10px}.cf-act .btn{justify-content:center}.cf-dec{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:6px;width:100%;margin-top:6px}.cf-dec .btn{justify-content:center}
 .call .msgp{font-size:12.5px;color:var(--ink-2);margin-top:6px;padding:8px 10px;border-radius:10px;background:var(--sunk);white-space:pre-wrap;line-height:1.6}
 a.btn{text-decoration:none}
 .btn.wa{background:#1F8B4C;border-color:#1F8B4C;color:#fff}
@@ -457,7 +459,7 @@ const LS = {
   jbId:'jsonbin_id', jbKey:'jsonbin_key', device:'device_id', lastChange:'local_last_change', draft:'kanach_last_vonder', cloudSeen:'kanach_cloud_seen'
 };
 const DEFAULT_SETTINGS = { appName:'كناش', adsPaused:true, defPrice:11700, defProfit:1048, defSeller:1150, defTaxe:250, soundAlert:true, browserNotif:false,
-  appFeePct:6, fixedFee:0, codPct:0.75, originWilaya:'Oran', defShip:'home', assumeRate:80, callScript:true, autoPush:false, fvFreeShipping:true, defWeight:1, labelFormat:'thermal', labelSender:'', labelPhone:'', targetEV:500, monthGoal:0 };
+  appFeePct:6, fixedFee:0, codPct:0.75, originWilaya:'Oran', defShip:'home', assumeRate:80, callScript:true, autoPush:false, fvFreeShipping:true, defWeight:1, labelFormat:'thermal', labelSender:'', labelPhone:'', targetEV:500, monthGoal:0, confirmMsg:'', confirmMax:3, autoWA:false };
 const DEFAULT_CARRIER  = { provider:'yalidine', apiId:'', apiToken:'', proxy:'', auto:true, interval:30, netMode:'est', extraFixed:0, extraPct:0, lastSync:null, log:[], undo:null };
 
 const readJSON = (k, fb) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } };
@@ -514,7 +516,7 @@ async function loadAll() {
 }
 
 /* ---- نسخ احتياطية تلقائية داخل المتصفح: قبل كل تحديث لكناش، وأسبوعياً. تُحفظ آخر 6 ويمكن استعادتها بنقرة ---- */
-const APP_VERSION = '9';
+const APP_VERSION = '10';
 async function snapshots() { if (!IDB.db) return []; try { return (await IDB.get('snapshots')) || []; } catch { return []; } }
 async function saveSnapshot(reason) {
   if (!IDB.db) return false;
@@ -634,8 +636,10 @@ function periodRange(key) {
 const inRange = (e, r) => e.date >= r.from && e.date <= r.to;
 const sum = (a, f) => a.reduce((s, x) => s + (f(x) || 0), 0);
 
+/* طلبية «حيّة» = خرجت فعلاً للتوصيل أو ستخرج: لا تُحسب الطلبيات التي تنتظر تأكيد الزبون ولا الملغاة في الأرباح والنسب */
+const isLive = e => isOrder(e) && e.status !== 'toconfirm' && e.status !== 'cancelled';
 function computeStats(entries) {
-  const orders = entries.filter(isOrder);
+  const orders = entries.filter(isLive);
   const delivered = orders.filter(e => e.status === 'delivered'), pending = orders.filter(e => e.status === 'pending'), returned = orders.filter(e => e.status === 'returned');
   const deliveredProfit = sum(delivered, e => e.amount), pendingProfit = sum(pending, e => e.amount);
   const expenses = sum(entries.filter(e => e.type === 'expense'), e => e.amount);
@@ -659,9 +663,10 @@ function buildCustomers() {
     const key = phone || name.toLowerCase();
     const c = map[key] || (map[key] = { key, name, phone, wilaya:'', orders:0, delivered:0, returned:0, profit:0, loss:0, last:'' });
     if (y.wilaya) c.wilaya = y.wilaya; if (y.clientName && !c.named) { c.name = y.clientName; c.named = true; }
-    if (isOrder(e)) {
+    if (isOrder(e) && e.status === 'cancelled') c.cancelled = (c.cancelled || 0) + 1;
+    else if (isLive(e)) {
       c.orders++; if (e.status === 'delivered') { c.delivered++; c.profit += e.amount || 0; } if (e.status === 'returned') c.returned++;
-    } else c.loss += e.amount || 0;
+    } else if (e.type === 'return') c.loss += e.amount || 0;
     if (e.date > c.last) c.last = e.date;
   });
   return Object.values(map);
@@ -1084,7 +1089,7 @@ function fvReader(cfg) {
       await sleep(250);
       return !findModal(id);
     };
-    var ok = function (r) { var s = strip(r.status.join(' ')); return /confirme avec le client/.test(s) && !/annul/.test(s); };
+    var ok = function (r) { var s = strip(r.status.join(' ')); return (/confirme avec le client/.test(s) || /en attente/.test(s)) && !/annul/.test(s); };
     var todo = rows.map(function (r, i) { return i; }).filter(function (i) { return ok(rows[i]); }), failed = 0, stuck = 0;
     for (var k = 0; k < todo.length; k++) {
       var i = todo[k], r = rows[i], tr = refs[i];
@@ -1114,8 +1119,9 @@ function fvReader(cfg) {
     }
     var payload = { kanach: 'vonder', v: 3, at: new Date().toISOString(), rows: rows };
     var got = todo.filter(function (i) { return rows[i].detail; }).length;
-    var msg = got + ' طلبية مؤكدة' + (failed ? ' — تعذّرت قراءة تفاصيل ' + failed : '');
-    if (!got) { box.textContent = 'كناش: لا توجد طلبيات «Confirmé avec le client» في هذه الصفحة' + (failed ? ' (تعذّرت قراءة ' + failed + ')' : ''); setTimeout(function () { box.remove(); }, 6000); return; }
+    var wait = todo.filter(function (i) { return rows[i].detail && /en attente/.test(strip(rows[i].status.join(' '))); }).length;
+    var msg = (got - wait ? (got - wait) + ' طلبية مؤكدة' : '') + (got - wait && wait ? ' و' : '') + (wait ? wait + ' بانتظار التأكيد' : '') + (failed ? ' — تعذّرت قراءة تفاصيل ' + failed : '');
+    if (!got) { box.textContent = 'كناش: لا توجد طلبيات مؤكدة أو بانتظار التأكيد في هذه الصفحة' + (failed ? ' (تعذّرت قراءة ' + failed + ')' : ''); setTimeout(function () { box.remove(); }, 6000); return; }
     var sentOK = false;
     if (cfg.inbox) {
       try {
@@ -1280,11 +1286,17 @@ function priceFvEntry(e) {
   return cc;
 }
 function importVonder(rows) {
-  const out = { added:0, dup:0, skipped:0, risky:0, missing: new Set(), ids: [] }, now = new Date().toISOString();
+  const out = { added:0, dup:0, skipped:0, risky:0, toconfirm:0, promoted:0, cancelled:0, missing: new Set(), ids: [], newToConfirm: [] }, now = new Date().toISOString();
   rows.forEach(r => {
-    const st = norm((r.status || []).join(' '));
-    if (!/confirme avec le client/.test(st) || /annule/.test(st)) { out.skipped++; return; }
-    const vid = String(r.id || ''); if (!vid) { out.skipped++; return; }
+    const st = norm((r.status || []).join(' ')), vid = String(r.id || '');
+    const isCancelled = /annule/.test(st), isConfirmed = !isCancelled && /confirme avec le client/.test(st), isWaiting = !isCancelled && !isConfirmed && /en attente/.test(st);
+    if (!vid) { out.skipped++; return; }
+    if (isCancelled) { // أُلغيت في FreeVendor وهي عندنا بانتظار التأكيد
+      const x = S.entries.find(e => e.vonderId === vid && e.status === 'toconfirm');
+      if (x) { x.status = 'cancelled'; x.cancelledAt = now; x.confirm = { ...(x.confirm || {}), result: 'no', via: 'freevendor' }; out.cancelled++; }
+      out.skipped++; return;
+    }
+    if (!isConfirmed && !isWaiting) { out.skipped++; return; }
     const dt = r.detail || null, pr = (r.prices || []).map(num), seller = num(r.seller);
     const items = dt?.items?.length ? dt.items.map(i => ({ name: String(i.name).trim(), qty: Math.max(1, num(i.qty)), price: num(i.price) }))
       : dt?.product ? [{ name: dt.product, qty: Math.max(1, num(dt.qty)), price: 0 }] : [];
@@ -1297,9 +1309,11 @@ function importVonder(rows) {
     const ship = { wilaya: (dt?.wilaya || r.wilaya || '').trim(), communeFV: (dt?.commune || '').trim(), address: (dt?.address || '').trim(), type,
       product: items.map(i => i.name + (i.qty > 1 ? ' ×' + i.qty : '')).join(' + ').slice(0, 200), price: cod, fvFee: fv, notes: (dt?.notes || '').trim(), name, phone };
     const ex = S.entries.find(e => e.vonderId === vid);
+    if (!ex && S.deleted?.['fv-' + vid]) { out.skipped++; return; } // حذفتها أنت: لا تعود
     if (ex) {
       out.dup++;
-      if (!ex.tracking && !ex.yalidinePushedAt && ex.status === 'pending') {
+      if (ex.status === 'toconfirm' && isConfirmed) { ex.status = 'pending'; ex.confirmedAt = now; ex.confirm = { ...(ex.confirm || {}), result: 'yes', via: 'freevendor' }; out.promoted++; }
+      if (!ex.tracking && !ex.yalidinePushedAt && ['pending', 'toconfirm'].includes(ex.status)) {
         if (dt) { ex.ship = { ...ex.ship, ...ship }; if (items.length) ex.items = items; }
         if (seller > 0) ex.sellerProfit = ex.totalSellerProfit = seller;
         if (productTotal) { ex.finalPrice = productTotal; ex.sellPrice = productTotal + (ex.sellerProfit || 0); }
@@ -1308,16 +1322,17 @@ function importVonder(rows) {
       return;
     }
     const q = items.reduce((a, i) => a + i.qty, 0) || 1;
-    const e = { id: uid(), date: iso(), type:'vonder', desc: `${name} ${phone}`.trim() || ('FreeVendor #' + vid), tracking:'', product: ship.product.slice(0, 80), status:'pending', timestamp: now,
+    const e = { id: 'fv-' + vid, date: iso(), type:'vonder', desc: `${name} ${phone}`.trim() || ('FreeVendor #' + vid), tracking:'', product: ship.product.slice(0, 80), status: isWaiting ? 'toconfirm' : 'pending', timestamp: now,
       vonderId: vid, fromVonder: true, fvSplit: true, items, ship, quantity: q, sellerProfit: seller, totalSellerProfit: seller, extraFee: 0,
       finalPrice: productTotal, sellPrice: productTotal + seller, netClient: 0, isActualProfit: false, netSource:'', sonaBuyPrice:0, sonaSellPrice:0, sonaQuantity:1,
       yalidineInfo: { clientName: name, phone, wilaya: ship.wilaya, commune: ship.communeFV } };
     const cc = priceFvEntry(e);
     autoCatalog(e);
     cc.missing.forEach(n => out.missing.add(n));
+    if (isWaiting) e.confirm = { attempts: 0, createdAt: now };
     S.entries.unshift(e); out.ids.push(e.id);
     if (riskyCustomer(phone)) out.risky++;
-    out.added++;
+    if (isWaiting) { out.toconfirm++; out.newToConfirm.push(e.id); } else out.added++;
   });
   return out;
 }
@@ -1479,8 +1494,19 @@ async function reconcileByOrderId(id) {
   try { const j = await Carrier.call('/parcels/', { order_id: id, page_size: 5 }); const p = (j.data || []).find(x => String(x.order_id) === String(id)); return p ? cleanTrack(p.tracking) : ''; } catch { return ''; }
 }
 /* يرسل الصفوف ويحفظ أرقام التتبع — يُستعمل من النافذة ومن الرفع التلقائي */
-async function sendParcels(rows) {
-  const ok = [], bad = [];
+async function claimRows(rows) {
+  if (!kanachCloud()) return { mine: rows, busy: [] };
+  try {
+    const r = await kcFetch('/claim', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: rows.map(r => r.e.id), device: deviceId() }) });
+    if (!r.ok) return { mine: rows, busy: [] };
+    const got = new Set((await r.json()).claimed || []), busy = rows.filter(r => !got.has(String(r.e.id)));
+    busy.forEach(r => { r.err = 'يُرفع الآن من جهازك الآخر — يظهر رقم التتبع بعد المزامنة'; });
+    return { mine: rows.filter(r => got.has(String(r.e.id))), busy };
+  } catch { return { mine: rows, busy: [] }; }
+}
+async function sendParcels(rows_) {
+  const ok = [], { mine: rows, busy: bad } = await claimRows(rows_), busy = bad.length;
+  if (busy) setTimeout(() => cloudReady() && cloudSync(), 60000);
   for (const group of chunk(rows, 10)) {
     let res = null, netErr = null;
     try { res = await Carrier.post('/parcels/', group.map(buildParcel)); } catch (err) { netErr = err; }
@@ -1500,7 +1526,7 @@ async function sendParcels(rows) {
     await sleep(400);
   }
   if (ok.length) { commit(); pingUpdate('كناش — Yalidine', `${ok.length} طرد أُنشئ`); }
-  return { ok, bad };
+  return { ok, bad, busy };
 }
 async function pushSend() {
   if (!PUSH || PUSH.sending) return;
@@ -1526,9 +1552,9 @@ async function autoPush() {
   try {
     await Carrier.checkProxy();
     const rows = await preparePush(list), go_ = rows.filter(r => !r.why.length);
-    const { ok, bad } = go_.length ? await sendParcels(go_) : { ok: [], bad: [] };
-    const wait = rows.length - ok.length;
-    S.carrier.log = [{ ts: new Date().toISOString(), auto: true, pushed: ok.length, failed: bad.length, waiting: wait }, ...(S.carrier.log || [])].slice(0, 20); saveCarrier();
+    const { ok, bad, busy } = go_.length ? await sendParcels(go_) : { ok: [], bad: [], busy: 0 };
+    const wait = rows.length - ok.length - busy;
+    S.carrier.log = [{ ts: new Date().toISOString(), auto: true, pushed: ok.length, failed: bad.length - busy, waiting: wait }, ...(S.carrier.log || [])].slice(0, 20); saveCarrier();
     if (ok.length || wait) toast(`Yalidine: ${ok.length} طرد أُنشئ تلقائياً${wait ? ` • ${wait} تنتظر مراجعتك` : ''}`, wait ? { action: { label: 'مراجعة', fn: () => openPush() } } : ok.length ? { action: { label: 'اطبع الملصقات', fn: () => printLabels(ok.map(r => r.e)) } } : {});
     return { ok: ok.length, wait };
   } catch (err) { toast('الرفع التلقائي: ' + err.message, { tone: 'bad' }); return null; }
@@ -1538,6 +1564,7 @@ async function autoPush() {
 /* ---- صندوق الوارد: الوسيط المحلي يستقبل ما يرسله قارئ FreeVendor ---- */
 let inboxTimer = null;
 async function pollInbox() {
+  pollWaResults();
   if (!KANACH_PROXY || (KANACH_CAPS?.cloud && !cloudKey())) return;
   const after = localStorage.getItem('kanach_inbox_after') || '';
   let j; try { const r = await fetch(`${KANACH_PROXY}/__kanach/inbox?after=${encodeURIComponent(after)}`, { cache: 'no-store', headers: KANACH_CAPS?.cloud ? kcHeaders() : {} }); if (!r.ok) return; j = await r.json(); } catch { return; }
@@ -1557,10 +1584,12 @@ window.addEventListener('message', ev => {
 function receiveFv(payload, ev) {
   const res = importVonder(payload.rows); commit();
   ev?.source?.postMessage({ kanachAck: true, added: res.added }, ev.origin);
-  toast(`FreeVendor: ${res.added} جديدة • ${res.dup} موجودة${res.risky ? ` • ⚠ ${res.risky} من زبائن لهم مرتجعات` : ''}${res.missing.size ? ` • ${res.missing.size} منتج بلا سعر شراء` : ''}`,
-    res.missing.size ? { action: { label: 'أكمل الأسعار', fn: () => openCatalog([...res.missing]) } } : {});
-  if (res.added) pingUpdate('كناش — FreeVendor', `${res.added} طلبية جديدة`);
+  const parts = [res.added && `${res.added} مؤكدة جديدة`, res.toconfirm && `${res.toconfirm} تنتظر تأكيد الزبون`, res.promoted && `${res.promoted} أكّدها FreeVendor`, res.cancelled && `${res.cancelled} أُلغيت`, res.dup - res.promoted && `${res.dup - res.promoted} موجودة`].filter(Boolean);
+  toast(`FreeVendor: ${parts.join(' • ') || 'لا جديد'}${res.risky ? ` • ⚠ ${res.risky} من زبائن لهم مرتجعات` : ''}${res.missing.size ? ` • ${res.missing.size} منتج بلا سعر شراء` : ''}`,
+    res.missing.size ? { action: { label: 'أكمل الأسعار', fn: () => openCatalog([...res.missing]) } } : res.toconfirm ? { action: { label: 'تأكيد', fn: openConfirm } } : {});
+  if (res.added || res.toconfirm) pingUpdate('كناش — FreeVendor', [res.added && `${res.added} طلبية جديدة`, res.toconfirm && `${res.toconfirm} للتأكيد`].filter(Boolean).join(' • '));
   if (S.settings.autoPush) autoPush();
+  if (res.toconfirm && S.settings.autoWA) waSendPending();
   return res;
 }
 if (window.opener) try { window.opener.postMessage({ kanachReady: true }, '*'); } catch {}
@@ -1704,11 +1733,11 @@ function notifyEvent(title, body) {
 }
 function pingUpdate(title, body) { playChime(); notifyEvent(title, body); }
 
-function toast(msg, { action, tone } = {}) {
+function toast(msg, { action, tone, ms } = {}) {
   const root = $('#toastRoot');
   root.innerHTML = `<div role="status" ${tone === 'bad' ? 'style="background:var(--loss);color:#fff"' : ''}>${esc(msg)}${action ? `<button id="toastAct">${esc(action.label)}</button>` : ''}</div>`;
   if (action) $('#toastAct').onclick = () => { action.fn(); root.innerHTML = ''; };
-  clearTimeout(toast.t); toast.t = setTimeout(() => { root.innerHTML = ''; }, action ? 8000 : 3400);
+  clearTimeout(toast.t); toast.t = setTimeout(() => { root.innerHTML = ''; }, ms || (action ? 8000 : 3400));
 }
 const Sheet = {
   onClose: null,
@@ -1728,7 +1757,7 @@ function ask({ title, body = '', ok = 'تأكيد', cancel = 'إلغاء', dange
     const r = $('#dlgRoot');
     r.innerHTML = `<div class="scrim" style="z-index:59"></div><div class="dlg"><form class="box" id="dlgForm" role="alertdialog" aria-label="${esc(title)}">
       <h3>${esc(title)}</h3>${body ? `<p>${esc(body)}</p>` : ''}
-      ${input ? `<label class="field"><span>${esc(input.label)}</span><input id="dlgInput" type="text" inputmode="${input.inputmode || 'decimal'}" class="ltr" value="${esc(input.value ?? '')}" placeholder="${esc(input.placeholder || '')}"></label>` : ''}
+      ${input ? `<label class="field"><span>${esc(input.label)}</span><input id="dlgInput" type="text" inputmode="${input.inputmode || 'decimal'}" class="${input.inputmode === 'text' ? '' : 'ltr'}" value="${esc(input.value ?? '')}" placeholder="${esc(input.placeholder || '')}"></label>` : ''}
       <div class="row"><button type="button" class="btn ghost" id="dlgNo">${esc(cancel)}</button><button class="btn ${danger ? 'danger' : ''}" id="dlgOk">${esc(ok)}</button></div></form></div>`;
     const done = v => { r.innerHTML = ''; res(v); };
     $('#dlgForm').onsubmit = e => { e.preventDefault(); done({ ok: true, value: input ? $('#dlgInput').value : null }); };
@@ -1748,7 +1777,9 @@ const Q = {
   risk:     e => Q.pending(e) && ['returning', 'failed'].includes(e.carrier?.stage),
   stale:    e => Q.pending(e) && daysBetween(parseISO(e.date), new Date()) > 7 && !Q.risk(e),
   est:      e => Q.delivered(e) && e.type === 'vonder' && (!e.isActualProfit || netSourceOf(e) === 'est'),
-  mismatch: e => isOrder(e) && e.status !== 'returned' && !!e.carrier?.priceMismatch
+  mismatch: e => isLive(e) && e.status !== 'returned' && !!e.carrier?.priceMismatch,
+  toconfirm:e => isOrder(e) && e.status === 'toconfirm',
+  cancelled:e => isOrder(e) && e.status === 'cancelled'
 };
 const STAGE_FLOW = ['prep', 'transit', 'out', 'delivered'];
 function stageOf(e) {
@@ -1777,13 +1808,15 @@ function trackHTML(e) {
   const raw = e.status === 'pending' ? (e.carrier?.status || (cleanTrack(e.tracking) ? 'بانتظار أول تحديث' : 'بلا رقم تتبع')) : '';
   return `<span class="track" style="--tc:${u.c}"><span class="seg4">${[1, 2, 3, 4].map(i => `<i class="${i <= u.step ? 'on' : ''}"></i>`).join('')}</span><span class="tl2">${u.label}</span>${raw ? `<span class="raw">· ${esc(raw)}</span>` : ''}</span>`;
 }
-const FILTERS = [['all','الكل'], ['pending','في الطريق'], ['delivered','مُسلَّمة'], ['returned','مرتجعة'], ['fin','مصاريف']];
-const SPECIAL = { s_prep:'تحضير', s_transit:'في الطريق', s_out:'خرجت للتسليم', notrack:'بدون رقم تتبع', risk:'راجعة / فاشلة', stale:'معلّقة +7 أيام', est:'فائدة تقديرية', mismatch:'مبلغ مختلف' };
+const FILTERS = [['all','الكل'], ['toconfirm','للتأكيد'], ['pending','في الطريق'], ['delivered','مُسلَّمة'], ['returned','مرتجعة'], ['fin','مصاريف']];
+const SPECIAL = { cancelled:'ملغاة عند التأكيد', s_prep:'تحضير', s_transit:'في الطريق', s_out:'خرجت للتسليم', notrack:'بدون رقم تتبع', risk:'راجعة / فاشلة', stale:'معلّقة +7 أيام', est:'فائدة تقديرية', mismatch:'مبلغ مختلف' };
 
 function attentionItems() {
   const E = S.entries, out = [];
   const add = (k, tone, icon, t, s) => { const n = E.filter(Q[k]).length; if (n) out.push({ k, tone, icon, t: `${n} ${t}`, s }); };
   const calls = callList().length, ready = Carrier.configured() ? readyToPush().length : 0, labels = labelQueue().length;
+  const tc = toConfirmList().length;
+  if (tc) out.unshift({ act: 'cf-open', tone: 'info', icon: 'phone', t: `${tc} طلبية تنتظر تأكيد الزبون`, s: ui.wa?.configured ? 'رسائل واتساب التلقائية + الردود' : 'اتصال أو واتساب بنقرة، ثم «أكّد» أو «ألغى»' });
   const dues = duesTotals(duesList());
   if (dues.n) out.push({ go: 'reports', sub: 'settle', tone: 'wait', icon: 'wallet', t: `${moneyT(dues.total)} عليك تسديدها`, s: `عمولة ${fmtNum(dues.fee)} + فائدة البائعين ${fmtNum(dues.seller)} (${dues.n} طلبية مُسلَّمة)` });
   if (ready) out.push({ act: 'push-open', tone: 'info', icon: 'upload', t: `${ready} طلبية جاهزة للرفع إلى Yalidine`, s: 'مطابقة الولاية والبلدية ثم إنشاء الطرود' });
@@ -1882,7 +1915,7 @@ function stageBadge(e) {
   if (e.type === 'return') return '<span class="badge neg">مرتجع</span>';
   if (!isOrder(e)) return '';
   if (e.status === 'pending' && e.carrier?.stage && e.carrier.stage !== 'unknown') { const s = STAGES[e.carrier.stage]; return `<span class="badge ${s.tone}">${s.label}</span>`; }
-  return { pending:'<span class="badge wait">معلّقة</span>', delivered:'<span class="badge pos">مُسلَّمة</span>', returned:'<span class="badge neg">مرتجعة</span>' }[e.status] || '';
+  return { pending:'<span class="badge wait">معلّقة</span>', delivered:'<span class="badge pos">مُسلَّمة</span>', returned:'<span class="badge neg">مرتجعة</span>', toconfirm:'<span class="badge info">بانتظار التأكيد</span>', cancelled:'<span class="badge">ملغاة</span>' }[e.status] || '';
 }
 function orderRow(e) {
   const qty = e.type === 'sonazone' ? (e.sonaQuantity || 1) : (e.quantity || 1);
@@ -1891,12 +1924,12 @@ function orderRow(e) {
     return `<button class="oc" data-act="open-entry" data-id="${esc(e.id)}"><span class="ico neg">${ic(ico)}</span>
       <span class="main"><span class="t">${esc(e.desc)}</span><span class="s"><span>${lbl}</span><span>${fmtDate(e.date)}</span></span></span><span class="amt neg">${money(-e.amount)}</span></button>`;
   }
-  const est = netSourceOf(e) === 'est', kind = e.status === 'returned' ? 'ضاعت (مرتجعة)' : e.status === 'pending' ? 'فائدة متوقعة' : (e.isActualProfit ? (est ? 'فائدة (تقديرية)' : 'فائدة مؤكدة') : 'فائدة متوقعة');
-  const cls = e.status === 'returned' ? 'muted' : e.status === 'pending' ? 'wait' : (e.amount >= 0 ? 'pos' : 'neg');
+  const est = netSourceOf(e) === 'est', kind = e.status === 'toconfirm' ? 'إن أكّد الزبون' : e.status === 'cancelled' ? 'ملغاة' : e.status === 'returned' ? 'ضاعت (مرتجعة)' : e.status === 'pending' ? 'فائدة متوقعة' : (e.isActualProfit ? (est ? 'فائدة (تقديرية)' : 'فائدة مؤكدة') : 'فائدة متوقعة');
+  const cls = ['returned', 'cancelled', 'toconfirm'].includes(e.status) ? 'muted' : e.status === 'pending' ? 'wait' : (e.amount >= 0 ? 'pos' : 'neg');
   return `<button class="oc" data-act="open-entry" data-id="${esc(e.id)}"><span class="main">
     <span class="t">${esc(e.desc)}${qty > 1 ? ` <span class="muted">× ${qty}</span>` : ''}</span>
     <span class="s">${e.product ? `<span>${esc(e.product)}</span>` : ''}${e.tracking ? `<span class="trk">${esc(e.tracking)}</span>` : ''}<span>${fmtDate(e.date)}</span></span>
-    ${trackHTML(e)}<span class="bd">${Q.notrack(e) && !e.fromVonder ? '' : ''}${e.fromVonder && !cleanTrack(e.tracking) ? '<span class="badge info">FreeVendor · لم تُرفع بعد</span>' : ''}${Q.mismatch(e) ? '<span class="badge wait">مبلغ مختلف</span>' : ''}${e.status === 'pending' && riskyCustomer(phoneOfEntry(e)) ? '<span class="badge neg">زبون له مرتجعات</span>' : ''}${e.status === 'delivered' && e.type === 'vonder' && est ? '<span class="badge info">Net تقديري</span>' : ''}</span>
+    ${['toconfirm', 'cancelled'].includes(e.status) ? '' : trackHTML(e)}<span class="bd">${e.status === 'toconfirm' ? `<span class="badge info">${ic('phone', 12)}بانتظار تأكيد الزبون${e.confirm?.attempts ? ` • ${e.confirm.attempts} محاولة` : ''}${e.confirm?.waSentAt ? ' • واتساب أُرسل' : ''}</span>` : ''}${e.status === 'cancelled' ? '<span class="badge">ملغاة عند التأكيد</span>' : ''}${Q.notrack(e) && !e.fromVonder ? '' : ''}${e.fromVonder && !cleanTrack(e.tracking) && e.status === 'pending' ? '<span class="badge info">FreeVendor · لم تُرفع بعد</span>' : ''}${Q.mismatch(e) ? '<span class="badge wait">مبلغ مختلف</span>' : ''}${e.status === 'pending' && riskyCustomer(phoneOfEntry(e)) ? '<span class="badge neg">زبون له مرتجعات</span>' : ''}${e.status === 'delivered' && e.type === 'vonder' && est ? '<span class="badge info">Net تقديري</span>' : ''}</span>
   </span><span class="amt ${cls}" ${e.status === 'returned' ? 'style="text-decoration:line-through"' : ''}>${money(e.amount, true)}<small>${kind}</small></span></button>`;
 }
 function filteredEntries() {
@@ -2194,7 +2227,7 @@ function buildProductStats(range) {
   S.entries.forEach(e => {
     if (!inRange(e, range)) return;
     if (e.type === 'return') { const o = byId.get(e.linkedOrderId); if (o && isOrder(o)) P(productOf(o)).returnLoss += num(e.amount); return; }
-    if (!isOrder(e)) return;
+    if (!isLive(e)) return;
     const p = P(productOf(e)), wid = wilayaOfEntry(e) || 0, w = p.w[wid] || (p.w[wid] = { o: 0, d: 0, r: 0, profit: 0, loss: 0 });
     p.orders++; w.o++; p.units += e.type === 'sonazone' ? (e.sonaQuantity || 1) : (e.quantity || 1); if (e.date > p.last) p.last = e.date;
     if (e.status === 'delivered') { p.delivered++; w.d++; p.revenue += num(e.sellPrice); p.profit += num(e.amount); w.profit += num(e.amount); }
@@ -2413,6 +2446,134 @@ function settleText(list) {
     '───────────────', `العمولة (${fmtNum(num(S.settings.appFeePct))}%): ${moneyT(t.fee)}`, `فائدة البائعين: ${moneyT(t.seller)}`, `المجموع: ${moneyT(t.total)}`].join('\n');
 }
 
+/* =====================================================================
+   تأكيد الطلبيات مع الزبون: مكالمة أو واتساب (يدوي بنقرة، أو تلقائي عبر WhatsApp Cloud API)
+   ما يؤكّده الزبون يصير «معلّقة» ويُرفع إلى Yalidine وحده إن كان الرفع التلقائي مفعّلاً
+   ===================================================================== */
+const DEFAULT_CONFIRM_MSG = 'السلام عليكم {name} 👋\nمعاك {shop}. وصلتنا طلبيتك: {product}\nالمبلغ: {price} دج، التوصيل {type} في {wilaya}.\nباش نبعثوهالك، أكّدلنا من فضلك: اكتب «نعم» إذا راك حاب تستلمها، ولا «لا» إذا بدّلت رأيك. يعطيك الصحة 🙏';
+const WA_TEMPLATE_TEXT = 'السلام عليكم {{1}} 👋\nمعاك {{2}}. وصلتنا طلبيتك: {{3}}\nالمبلغ: {{4}} دج مع التوصيل إلى {{5}}.\nباش نبعثوهالك، أكّدلنا من فضلك بالضغط على واحد من الزرين.';
+function confirmVars(e) {
+  const sh = e.ship || {}, y = e.yalidineInfo || {}, w = wilayaOfEntry(e), full = (sh.name || y.clientName || (e.desc || '').replace(/0\d{9}/, '')).trim();
+  return { name: full.split(/\s+/)[0] || '', fullname: full, product: (sh.product || e.product || '').slice(0, 80), price: fmtNum(sh.price || ((e.sellPrice || 0) + (sh.fvFee || 0))),
+    wilaya: w ? AR_W[w] : (sh.wilaya || y.wilaya || ''), commune: sh.communeFV || y.commune || '', address: sh.address || '', type: sh.type === 'desk' ? 'للمكتب' : 'للدار',
+    shop: S.settings.labelSender || S.settings.appName || 'كناش', shopphone: S.settings.labelPhone || '', phone: normPhone(sh.phone || y.phone || phoneOfEntry(e)) };
+}
+const fillMsg = (tpl, v) => String(tpl || DEFAULT_CONFIRM_MSG).replace(/\{(\w+)\}/g, (_, k) => v[k] ?? '');
+/* ما تقوله في المكالمة: قصير، بالدارجة، وتتأكد فيه من العنوان */
+function confirmScript(v) {
+  return [`السلام عليكم، نحكي مع ${v.name || 'صاحب الطلبية'}؟ معاك ${v.shop}.`, `طلبت عندنا ${v.product} — المبلغ ${v.price} دج مع التوصيل ${v.type}.`,
+    `نأكدو العنوان: ${v.wilaya}${v.commune ? '، ' + v.commune : ''}${v.address ? '، ' + v.address : ''}. صحيح؟`, 'الموزّع يعيطلك قبل ما يجي، خلّي التيليفون مفتوح.', 'نبعثوهالك؟ ← نعم: «أكّد» • لا: اسأله علاش (السعر؟ الوقت؟) ثم «ألغى».'];
+}
+const toConfirmList = () => S.entries.filter(Q.toconfirm).sort((a, b) => String(a.confirm?.createdAt || a.timestamp).localeCompare(String(b.confirm?.createdAt || b.timestamp)));
+function confirmOrder(e, via) {
+  if (!e || e.status !== 'toconfirm') return false;
+  const now = new Date().toISOString();
+  e.status = 'pending'; e.confirmedAt = now; e.confirm = { ...(e.confirm || {}), result: 'yes', via, at: now };
+  return true;
+}
+function cancelOrder(e, via, reason = '') {
+  if (!e || e.status !== 'toconfirm') return false;
+  const now = new Date().toISOString();
+  e.status = 'cancelled'; e.cancelledAt = now; e.confirm = { ...(e.confirm || {}), result: 'no', via, at: now, reason };
+  return true;
+}
+function afterConfirmChange(msg) {
+  commit(); if (Sheet.isOpen() && $('#cfList')) openConfirm();
+  toast(msg + (S.settings.autoPush && Carrier.configured() ? ' • تُرفع إلى Yalidine' : ''));
+  if (S.settings.autoPush) autoPush();
+}
+const sh_type = e => e.ship?.type === 'desk' ? 'مكتب' : 'منزل';
+function confirmCardHTML(e) {
+  const v = confirmVars(e), c = e.confirm || {}, rc = riskyCustomer(v.phone), max = num(S.settings.confirmMax) || 3;
+  const status = [c.attempts ? `${c.attempts} محاولة اتصال${c.lastAttempt ? ` • آخرها ${timeAgo(c.lastAttempt)}` : ''}` : '', c.waSentAt ? `واتساب ${c.waAuto ? 'تلقائي' : 'يدوي'} ${timeAgo(c.waSentAt)}` : '', c.waError ? `⚠ ${c.waError}` : ''].filter(Boolean).join(' • ');
+  return `<div class="call cf" style="flex-wrap:wrap;align-items:flex-start"><span class="ico ${rc ? 'neg' : 'info'}">${ic('phone')}</span><div class="grow" style="min-width:60%">
+      <div class="who"><b>${esc(v.fullname || e.desc)}</b><span class="amt n">${v.price} <small>دج</small></span></div><span class="sub"><span class="n">${esc(v.phone)}</span> • ${esc(v.wilaya)}${v.commune ? '، ' + esc(v.commune) : ''} • ${sh_type(e)}</span>
+      <div class="sub" style="margin-top:2px"><bdi>${esc(v.product)}</bdi>${e.vonderId ? ` • <bdi>#${esc(e.vonderId)}</bdi>` : ''}</div>
+      ${rc ? `<div class="note bad" style="margin-top:6px;padding:8px 10px">${ic('alert', 16)}<div>زبون <b>${rc.r.t}</b>: ${rc.c.returned} مرتجع من ${rc.c.orders} طلبية.</div></div>` : ''}
+      ${c.reply ? `<div class="msgp" style="border-inline-start:3px solid var(--info)">ردّ الزبون: «${esc(c.reply)}»</div>` : ''}
+      ${status ? `<div class="sub" style="margin-top:4px">${esc(status)}</div>` : ''}
+      <details style="margin-top:6px"><summary class="sub" style="cursor:pointer">ما تقوله في المكالمة</summary><ol class="sub" style="padding-inline-start:18px;line-height:1.8;margin-top:4px">${confirmScript(v).map(l => `<li>${esc(l)}</li>`).join('')}</ol></details></div>
+    ${v.phone ? `<div class="cf-act"><button class="btn sm sec2" data-act="cf-call" data-id="${esc(e.id)}">${ic('phone', 16)}اتصال</button><button class="btn sm wa" data-act="cf-wa" data-id="${esc(e.id)}">${ic('wa', 16)}واتساب</button></div>` : '<div class="sub neg" style="width:100%;margin-top:8px">بلا هاتف — راجعها في FreeVendor</div>'}
+    <div class="cf-dec">
+      <button class="btn sm" data-act="cf-yes" data-id="${esc(e.id)}">${ic('check', 16)}أكّد</button>
+      <button class="btn sm danger-o" data-act="cf-no" data-id="${esc(e.id)}">ألغى</button>
+      <button class="btn sm sec2" data-act="cf-noans" data-id="${esc(e.id)}">${(c.attempts || 0) >= max ? 'لم يرد (كثيراً)' : 'لم يرد'}</button>
+    </div></div>`;
+}
+function openConfirm() {
+  const list = toConfirmList(), wa = ui.wa?.configured && kanachCloud();
+  const unsent = list.filter(e => !e.confirm?.waSentAt).length;
+  const body = list.length ? `<div class="sub" style="margin:2px 2px 10px">${list.length} طلبية تنتظر كلمة الزبون. ما تؤكّده يصير «معلّقة»${S.settings.autoPush ? ' ويُرفع إلى Yalidine وحده' : ' وتجده في <bdi>«رفع إلى Yalidine»</bdi>'}.</div>
+    ${wa && unsent ? `<button class="btn block wa" style="margin-bottom:10px" data-act="cf-wa-all">${ic('wa', 18)}<span>أرسل رسالة التأكيد تلقائياً لـ ${unsent} زبون</span></button>` : ''}
+    ${!wa ? `<div class="note" style="margin-bottom:10px">${ic('info', 18)}<div>زر «واتساب» يفتح المحادثة والرسالة جاهزة؛ أنت تضغط «إرسال». لإرسال تلقائي واستقبال «نعم/لا» وحدها: <button class="lnk" data-act="go" data-tab="settings" data-sub="confirm">فعّل WhatsApp API</button>.</div></div>` : ''}
+    <div class="card list" id="cfList">${list.map(confirmCardHTML).join('')}</div>`
+    : `<div class="card empty">${ic('check', 32)}<b>لا طلبيات تنتظر التأكيد</b>تظهر هنا طلبيات FreeVendor «En attente de confirmation» عند استيرادها.</div>`;
+  Sheet.open({ title: 'تأكيد الطلبيات', body, footer: '' });
+}
+
+/* ---- WhatsApp Cloud API (عبر كناش السحابي) ---- */
+async function waRefresh() { if (!kanachCloud()) return null; try { const r = await kcFetch('/wa/config'); if (r.ok) ui.wa = await r.json(); } catch {} return ui.wa; }
+async function waSendFor(e, { auto = false, force = false } = {}) {
+  const v = confirmVars(e);
+  const r = await kcFetch('/wa/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: e.id, phone: v.phone, name: v.fullname, force, vars: [v.name || v.fullname, v.shop, v.product, v.price, v.wilaya] }) });
+  const j = await r.json().catch(() => ({}));
+  e.confirm = { ...(e.confirm || {}) };
+  if (j.ok) { if (!j.skipped || !e.confirm.waSentAt) { e.confirm.waSentAt = new Date().toISOString(); e.confirm.waAuto = true; } delete e.confirm.waError; }
+  else e.confirm.waError = j.error || 'تعذّر الإرسال';
+  return !!j.ok;
+}
+let WA_SENDING = false;
+async function waSendPending({ manual = false } = {}) {
+  if (WA_SENDING || !kanachCloud() || !ui.wa?.configured || (!manual && !S.settings.autoWA)) return 0;
+  WA_SENDING = true; let n = 0;
+  try { for (const e of toConfirmList().filter(x => !x.confirm?.waSentAt && (manual || (!x.confirm?.waError && Date.now() - Date.parse(x.confirm?.createdAt || x.timestamp) < 3 * 864e5)))) { if (await waSendFor(e, { auto: !manual })) n++; await sleep(300); } }
+  finally { WA_SENDING = false; }
+  if (n || manual) { persist(); if (manual) toast(`أُرسلت ${n} رسالة تأكيد`); }
+  return n;
+}
+async function pollWaResults() {
+  if (!kanachCloud() || !ui.wa?.configured) return;
+  const after = localStorage.getItem('kanach_wa_after') || '';
+  let j; try { const r = await kcFetch('/wa/results?after=' + encodeURIComponent(after)); if (!r.ok) return; j = await r.json(); } catch { return; }
+  const res = j.results || []; if (!res.length) return;
+  let yes = 0, no = 0, rep_ = 0; const late = [];
+  for (const x of res) {
+    const e = S.entries.find(y => y.id === x.id);
+    if (e) {
+      if (x.result === 'no' && e.status === 'pending' && !e.tracking && !e.yalidinePushedAt) e.status = 'toconfirm'; // أكّد ثم تراجع قبل الإرسال
+      if (x.result === 'yes' && confirmOrder(e, 'whatsapp')) yes++;
+      else if (x.result === 'no' && cancelOrder(e, 'whatsapp', x.text)) no++;
+      else if (x.result === 'no' && e.tracking && !['delivered', 'returned', 'cancelled'].includes(e.status)) { e.confirm = { ...(e.confirm || {}), reply: x.text, replyAt: x.at, lateNo: true }; late.push(e); }
+      else if (x.result === 'reply' && e.status === 'toconfirm') { e.confirm = { ...(e.confirm || {}), reply: x.text, replyAt: x.at }; rep_++; }
+    }
+    localStorage.setItem('kanach_wa_after', x.rid);
+  }
+  if (yes || no || rep_) { commit(); toast([yes && `✅ ${yes} أكّدوا`, no && `❌ ${no} ألغوا`, rep_ && `💬 ${rep_} ردّ يحتاج قرارك`].filter(Boolean).join(' • '), rep_ ? { action: { label: 'عرض', fn: openConfirm } } : {}); pingUpdate('كناش — تأكيد الطلبيات', `${yes} مؤكدة • ${no} ملغاة`); if (yes && S.settings.autoPush) autoPush(); }
+  if (late.length) { if (!(yes || no || rep_)) commit(); toast(`⚠ ${late.map(e => confirmVars(e).fullname).join('، ')} ألغى بعد إنشاء الطرد — ألغِه في Yalidine قبل خروجه`, { tone: 'bad', ms: 12000 }); }
+}
+function confirmSection() {
+  const s = S.settings, wa = ui.wa, cloud = kanachCloud(), hook = KANACH_PROXY ? KANACH_PROXY + '/__kanach/wa/webhook' : '';
+  const f = (id, label, ph, type = 'text', hint = '') => `<label class="field"><span>${label}</span><input type="${type}" class="ltr" id="${id}" autocomplete="off" placeholder="${esc(ph)}">${hint ? `<small>${hint}</small>` : ''}</label>`;
+  return setSec('sec-confirm', 'wa', 'تأكيد الطلبيات (اتصال / واتساب)', wa?.configured ? `WhatsApp API متصل${s.autoWA ? ' • إرسال تلقائي' : ''}` : 'يدوي بنقرة', `
+    <div class="two"><label class="field"><span>هاتف المتجر</span><input type="tel" class="ltr" data-bind="settings.labelPhone" value="${esc(s.labelPhone || '')}" placeholder="05XXXXXXXX"><small>يظهر على الملصق، وفي الرسالة إن أضفت {shopphone}.</small></label>
+      <label class="field"><span>أقصى محاولات اتصال</span><input type="number" inputmode="numeric" data-bind="settings.confirmMax" data-num value="${num(s.confirmMax) || 3}"><small>بعدها تُعلَّم «لم يرد كثيراً».</small></label></div>
+    <label class="field"><span>رسالة التأكيد (واتساب يدوي)</span><textarea rows="5" data-bind="settings.confirmMsg" placeholder="${esc(DEFAULT_CONFIRM_MSG)}">${esc(s.confirmMsg || '')}</textarea><small>المتغيّرات: {name} {product} {price} {wilaya} {commune} {type} {shop} {shopphone}. اتركها فارغة لاستعمال الرسالة الافتراضية.</small></label>
+    <hr class="sep"><b style="font-size:14px">إرسال تلقائي واستقبال الرد (WhatsApp Cloud API)</b>
+    ${!cloud ? `<div class="note" style="margin-top:8px">${ic('info', 18)}<div>يحتاج <b>كناش السحابي</b> (القسم الأول) لأن Meta ترسل ردود الزبائن إليه.</div></div>` : `
+    <div class="note ${wa?.configured ? 'good' : ''}" style="margin:8px 0">${ic(wa?.configured ? 'check' : 'info', 18)}<div>${wa?.configured ? `متصل • القالب «${esc(wa.template)}» (${esc(wa.lang)})` : 'الخطوات في ملف CONFIRM.md: تطبيق Meta، رقم واتساب، قالب معتمد، ثم الصق القيم هنا.'}</div></div>
+    <div class="two">${f('waPhoneId', 'Phone number ID', wa?.phoneId || '1234567890')}${f('waTemplate', 'اسم القالب', wa?.template || 'kanach_order_confirm')}</div>
+    <div class="two">${f('waToken', 'Access token (دائم)', wa?.token ? '•••••••• (محفوظ)' : 'EAAG…', 'password')}${f('waSecret', 'App secret', wa?.appSecret ? '•••••••• (محفوظ)' : '', 'password', 'للتحقق أن الردود من Meta فعلاً.')}</div>
+    <div class="two">${f('waLang', 'لغة القالب', wa?.lang || 'ar')}${f('waVer', 'إصدار Graph API', wa?.graphVer || 'v23.0')}</div>
+    <button class="btn sec2 block" data-act="wa-save">حفظ إعداد واتساب</button>
+    ${wa?.verifyToken ? `<div class="card pad-s" style="margin-top:10px"><div class="sub">في Meta ← WhatsApp ← Configuration ← Webhook:</div>
+      <div class="kv"><span>Callback URL</span><button class="copy" data-act="copy" data-v="${esc(hook)}">${ic('copy', 14)}نسخ</button></div><div class="sub n" style="word-break:break-all">${esc(hook)}</div>
+      <div class="kv"><span>Verify token</span><button class="copy" data-act="copy" data-v="${esc(wa.verifyToken)}">${ic('copy', 14)}نسخ</button></div><div class="sub n">${esc(wa.verifyToken)}</div>
+      <div class="sub" style="margin-top:6px">ثم فعّل الاشتراك في <b>messages</b>.</div></div>` : ''}
+    <div class="card pad-s" style="margin-top:10px"><div class="row"><b class="grow" style="font-size:13.5px">نص القالب لتقدّمه لـ Meta (Utility • Arabic)</b><button class="copy" data-act="copy" data-v="${esc(WA_TEMPLATE_TEXT)}">${ic('copy', 14)}نسخ</button></div>
+      <div class="msgp">${esc(WA_TEMPLATE_TEXT)}</div><div class="sub" style="margin-top:6px">زرّا Quick reply: «نعم، أكّد الطلبية» و«لا، ألغِ الطلبية».</div></div>
+    <div class="sw"><div class="tx"><b>إرسال تلقائي فور وصول الطلبيات</b><span>رسالة واحدة لكل طلبية «بانتظار التأكيد». ردّ «نعم» يؤكّدها، و«لا» يلغيها، وأي ردّ آخر يُعرض عليك.</span></div><label class="toggle"><input type="checkbox" data-bind="settings.autoWA" data-render ${s.autoWA ? 'checked' : ''} ${wa?.configured ? '' : 'disabled'} aria-label="إرسال تلقائي"><i></i></label></div>`}`);
+}
+
 const R_PERIODS = [['month','هذا الشهر'], ['lastm','الشهر الماضي'], ['30d','30 يوماً'], ['7d','7 أيام'], ['all','الكل']];
 function reportText(range) {
   const st = computeStats(S.entries.filter(e => inRange(e, range)));
@@ -2536,6 +2697,7 @@ function viewSettings() {
   const num_ = (k, l) => `<label class="field"><span>${l}</span><input type="number" inputmode="decimal" data-bind="settings.${k}" data-num value="${num(s[k])}"></label>`;
   return `<div class="stack">
   ${appSection()}
+  ${confirmSection()}
   ${setSec('sec-general', 'sliders', 'عام والقيم الافتراضية', `${esc(s.appName)} • فائدتي ${fmtNum(num(s.defProfit))} • Taxe ${fmtNum(num(s.defTaxe))}`, `<div><label class="field"><span>اسم التطبيق</span><input type="text" data-bind="settings.appName" data-title value="${esc(s.appName)}" maxlength="30"></label></div>
     <div class="sw" style="padding-top:0"><div class="tx"><b>الإعلانات موقوفة مؤقتاً</b><span>يخفي كل ما يخص الإعلانات (بطاقات، تحليل، نوع الحركة). الأرقام السابقة تبقى محسوبة.</span></div><label class="toggle"><input type="checkbox" data-bind="settings.adsPaused" data-render ${s.adsPaused ? 'checked' : ''} aria-label="إيقاف الإعلانات"><i></i></label></div><hr class="sep"><div class="sub" style="margin:2px 0 12px">تُستعمل عند أول طلبية؛ بعدها يقترح التطبيق قيم آخر طلبية.</div>
     <div class="two">${num_('defPrice', 'سعر المنتج')}${num_('defProfit', 'فائدتي / قطعة')}</div><div class="two">${num_('defSeller', 'فائدة البائع')}${num_('defTaxe', 'Taxe retour')}</div>`)}
@@ -2622,7 +2784,7 @@ function newDraft(type = 'vonder') {
     wid: '', shipType: s.defShip, phone: '', cname: '', paste: '' };
 }
 function draftFromEntry(e) {
-  const d = newDraft(e.type); d.id = e.id; d.date = e.date; d.desc = e.desc || ''; d.tracking = e.tracking || ''; d.product = e.product || ''; d.status = e.status === 'delivered' ? 'delivered' : 'pending';
+  const d = newDraft(e.type); d.id = e.id; d.date = e.date; d.desc = e.desc || ''; d.tracking = e.tracking || ''; d.product = e.product || ''; d.status = e.status === 'delivered' ? 'delivered' : 'pending'; d.keepStatus = ['toconfirm', 'cancelled'].includes(e.status) ? e.status : '';
   d.wid = wilayaOfEntry(e) || ''; d.shipType = e.ship?.type || S.settings.defShip; d.phone = phoneOfEntry(e); d.cname = e.yalidineInfo?.clientName || '';
   if (e.type === 'vonder') { d.price = e.productPrice; d.qty = e.quantity || 1; d.myProfit = e.myProfit; d.seller = e.sellerProfit ?? 0; d.extra = e.extraFee || 0; d.net = e.isActualProfit ? e.netClient : ''; }
   else if (e.type === 'sonazone') { d.buy = e.sonaBuyPrice; d.sell = e.sonaSellPrice; d.sqty = e.sonaQuantity || 1; }
@@ -2765,7 +2927,7 @@ function saveForm() {
   let e;
   if (t === 'expense') e = { id: old?.id || uid(), date: F.date, type: 'expense', desc: F.desc.trim() || 'مصروف', amount: num(F.amount), status: 'completed', timestamp: old?.timestamp || now };
   else {
-    const delivered = F.status === 'delivered', common = { id: old?.id || uid(), date: F.date, desc: F.desc.trim() || (t === 'vonder' ? 'طلبية Vonder' : 'طلبية Sonazone'), tracking: cleanTrack(F.tracking), product: F.product.trim(), status: F.status, timestamp: old?.timestamp || now };
+    const delivered = F.status === 'delivered', common = { id: old?.id || uid(), date: F.date, desc: F.desc.trim() || (t === 'vonder' ? 'طلبية Vonder' : 'طلبية Sonazone'), tracking: cleanTrack(F.tracking), product: F.product.trim(), status: F.keepStatus || F.status, timestamp: old?.timestamp || now };
     if (t === 'vonder') {
       const c = calcVonder({ price: F.price, qty: F.qty, myProfit: F.myProfit, extra: F.extra, seller: F.seller, wid: +F.wid || 0, type: F.shipType, fvFee: old?.ship?.fvFee, yalFee: old?.carrier?.deliveryFee }), net = num(F.net), actual = delivered && net > 0;
       const keepSrc = old && Math.round(old.netClient || 0) === Math.round(net) ? (old.netSource || 'manual') : 'manual';
@@ -2841,6 +3003,8 @@ function entryFooter(e) {
   const id = esc(e.id);
   if (e.type === 'return') { const o = S.entries.find(x => sameId(x.id, e.linkedOrderId)); return `${o ? `<button class="btn sec2 grow" data-act="entry-pending" data-id="${esc(o.id)}">إلغاء المرتجع</button>` : ''}<button class="btn danger-o grow" data-act="entry-delete" data-id="${id}">حذف</button>`; }
   if (!isOrder(e)) return `<button class="btn sec2 grow" data-act="entry-edit" data-id="${id}">تعديل</button><button class="btn danger-o grow" data-act="entry-delete" data-id="${id}">حذف</button>`;
+  if (e.status === 'toconfirm') return `<button class="btn grow" data-act="cf-yes" data-id="${id}">${ic('check', 18)}أكّد الزبون</button><button class="btn sec2" data-act="cf-open">اتصال / واتساب</button><button class="btn danger-o" data-act="cf-no" data-id="${id}">ألغى</button>`;
+  if (e.status === 'cancelled') return `<button class="btn sec2 grow" data-act="cf-reopen" data-id="${id}">أعدها للتأكيد</button><button class="btn danger-o" data-act="entry-delete" data-id="${id}">حذف</button>`;
   if (e.status === 'pending') return `<button class="btn grow" data-act="entry-deliver" data-id="${id}">${ic('check', 18)}تم التسليم</button><button class="btn danger-o" data-act="entry-return" data-id="${id}">مرتجع</button>`;
   if (e.status === 'delivered') return `${e.type === 'vonder' ? `<button class="btn grow" data-act="entry-net" data-id="${id}">Net Client</button>` : ''}<button class="btn sec2 grow" data-act="entry-pending" data-id="${id}">إرجاع للمعلّقة</button><button class="btn danger-o" data-act="entry-return" data-id="${id}">مرتجع</button>`;
   return `<button class="btn sec2 grow" data-act="entry-pending" data-id="${id}">إلغاء المرتجع</button>`;
@@ -2861,6 +3025,18 @@ const A = {
     $('#sheetBody').innerHTML = formBody(); updateForm(); },
   'call-open': () => openCallList(),
   'labels-open': () => openLabels(),
+  'cf-open': () => openConfirm(),
+  'cf-yes': (d) => { const e = S.entries.find(x => sameId(x.id, d.id)); if (confirmOrder(e, e.confirm?.lastVia || 'manual')) { if (!$('#cfList')) Sheet.close(); afterConfirmChange(`أُكّدت طلبية ${confirmVars(e).fullname}`); } },
+  'cf-no': async (d) => { const e = S.entries.find(x => sameId(x.id, d.id)); if (!e) return; const r = await ask({ title: 'الزبون ألغى الطلبية؟', body: confirmVars(e).fullname, ok: 'إلغاء الطلبية', danger: true, input: { label: 'السبب (اختياري)', inputmode: 'text', placeholder: 'السعر، الوقت، طلب بالخطأ…' } }); if (!r.ok) return;
+    if (cancelOrder(e, e.confirm?.lastVia || 'manual', (r.value || '').trim())) { if (!$('#cfList')) Sheet.close(); commit(); if ($('#cfList')) openConfirm(); toast('أُلغيت الطلبية'); } },
+  'cf-noans': (d) => { const e = S.entries.find(x => sameId(x.id, d.id)); if (!e) return; e.confirm = { ...(e.confirm || {}), attempts: (e.confirm?.attempts || 0) + 1, lastAttempt: new Date().toISOString() }; persist(); openConfirm();
+    if (e.confirm.attempts >= (num(S.settings.confirmMax) || 3)) toast(`${e.confirm.attempts} محاولات بلا رد — جرّب واتساب أو ألغِ الطلبية`, { tone: 'bad' }); },
+  'cf-reopen': (d) => { const e = S.entries.find(x => sameId(x.id, d.id)); if (!e || e.status !== 'cancelled') return; e.status = 'toconfirm'; delete e.cancelledAt; e.confirm = { ...(e.confirm || {}), result: '' }; Sheet.close(); commit(); toast('أُعيدت للتأكيد'); },
+  'cf-call': (d) => { const e = S.entries.find(x => sameId(x.id, d.id)); if (!e) return; const v = confirmVars(e); e.confirm = { ...(e.confirm || {}), lastVia: 'call', lastAttempt: new Date().toISOString() }; persist(); location.href = 'tel:' + v.phone; },
+  'cf-wa': (d) => { const e = S.entries.find(x => sameId(x.id, d.id)); if (!e) return; const v = confirmVars(e); e.confirm = { ...(e.confirm || {}), lastVia: 'whatsapp', waSentAt: new Date().toISOString(), waAuto: false }; persist(); window.open(waLink(v.phone, fillMsg(S.settings.confirmMsg, v)), '_blank'); openConfirm(); },
+  'cf-wa-all': async () => { await waSendPending({ manual: true }); openConfirm(); },
+  'wa-save': async () => { const g = id => ($('#' + id)?.value || '').trim(), body = { token: g('waToken'), phoneId: g('waPhoneId'), template: g('waTemplate'), appSecret: g('waSecret'), lang: g('waLang'), graphVer: g('waVer') };
+    try { const r = await kcFetch('/wa/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); ui.wa = await r.json(); toast(ui.wa.configured ? 'واتساب متصل ✓ — أكمل إعداد الـWebhook في Meta' : 'حُفظ — بعض الحقول ما زالت ناقصة'); } catch (e) { toast(e.message, { tone: 'bad' }); } render(); },
   'copy-bm': () => copyText(fvBookmarklet()),
   'kc-save': async () => {
     const v = ($('#kcKey')?.value || '').trim(); if (!v) { toast('أدخل المفتاح'); return; }
@@ -2868,7 +3044,7 @@ const A = {
     try { const r = await kcFetch('/config'); if (!r.ok) throw new Error('HTTP ' + r.status); ui.srv = await r.json(); }
     catch (e) { localStorage.removeItem('kanach_cloud_key'); toast(e.message, { tone: 'bad' }); render(); return; }
     if (IDB.db) IDB.setMany({ cloudKey: v, cloudBase: KANACH_PROXY }).catch(() => {});
-    initCloud(); scheduleInbox(); await cloudSync({ manual: true }); render();
+    initCloud(); scheduleInbox(); await cloudSync({ manual: true }); await waRefresh(); render();
   },
   'app-install': async () => { if (!INSTALL_EVT) return; INSTALL_EVT.prompt(); await INSTALL_EVT.userChoice.catch(() => {}); INSTALL_EVT = null; render(); },
   'push-on': async () => { try { await pushSubscribe(); toast('فُعّلت الإشعارات على هذا الجهاز'); const r = await kcFetch('/config'); if (r.ok) ui.srv = await r.json(); } catch (e) { toast(e.message, { tone: 'bad' }); } render(); },
@@ -3102,7 +3278,7 @@ async function handleYalFile(file) {
 }
 async function exportXlsx() {
   try { await loadXLSX(); } catch (e) { toast(e.message, { tone: 'bad' }); return; }
-  const rows = S.entries.filter(isOrder).map(e => ({ التاريخ: e.date, الوصف: e.desc, النوع: e.type === 'vonder' ? 'Vonder' : 'Sonazone', الحالة: { pending: 'معلّقة', delivered: 'مُسلَّمة', returned: 'مرتجعة' }[e.status],
+  const rows = S.entries.filter(isOrder).map(e => ({ التاريخ: e.date, الوصف: e.desc, النوع: e.type === 'vonder' ? 'Vonder' : 'Sonazone', الحالة: { toconfirm: 'بانتظار التأكيد', cancelled: 'ملغاة', pending: 'معلّقة', delivered: 'مُسلَّمة', returned: 'مرتجعة' }[e.status],
     'رقم التتبع': e.tracking || '', المنتج: e.product || '', الزبون: e.yalidineInfo?.clientName || '', الهاتف: e.yalidineInfo?.phone || '', الولاية: e.yalidineInfo?.wilaya || '',
     'سعر الزبون': e.sellPrice || '', 'Net Client': e.isActualProfit ? e.netClient : '', 'مصدر Net': NET_LABEL[netSourceOf(e)] || '', الفائدة: Math.round(e.amount || 0) }));
   if (!rows.length) { toast('لا توجد طلبيات للتصدير'); return; }
@@ -3156,13 +3332,28 @@ function mergeById(local, remote, tombs) {
   Object.entries(tombs).forEach(([id, ts]) => { const x = m.get(id); if (x && (x.updatedAt || '') <= ts) m.delete(id); });
   return [...m.values()];
 }
+/* نسختان لنفس طلبية FreeVendor (استوردها جهازان قبل أن يتزامنا): نُبقي الأتقدّم، وبنفس الاختيار على كل جهاز */
+function dedupeVonder(list) {
+  const rank = e => [e.tracking ? 1 : 0, e.status === 'toconfirm' ? 0 : 1, String(e.id).startsWith('fv-') ? 1 : 0, e.id];
+  const better = (a, b) => { const x = rank(a), y = rank(b); for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] > y[i]; return false; };
+  const keep = new Map(), drop = new Set();
+  list.forEach(e => {
+    if (!e.vonderId || !isOrder(e)) return; const k = keep.get(e.vonderId);
+    if (!k) { keep.set(e.vonderId, e); return; }
+    if (k.tracking && e.tracking && cleanTrack(k.tracking) !== cleanTrack(e.tracking)) return; // طردان حقيقيان: لا نلمسهما
+    if (better(e, k)) { drop.add(k); keep.set(e.vonderId, e); } else drop.add(e);
+  });
+  if (!drop.size) return list;
+  const now = new Date().toISOString(); drop.forEach(e => { S.deleted[e.id] = now; });
+  return list.filter(e => !drop.has(e));
+}
 const mergeTombs = (a = {}, b = {}) => { const o = { ...a }; Object.entries(b).forEach(([k, v]) => { if (!o[k] || v > o[k]) o[k] = v; }); return o; };
 const stateKey = d => JSON.stringify([(d.entries || []).map(x => x.id + '@' + (x.updatedAt || '')).sort(), (d.budgetExp || []).map(x => x.id + '@' + (x.updatedAt || '')).sort(), Object.keys(d.deleted || {}).sort(), Object.keys(d.deletedB || {}).sort(), Object.entries(d.budgets || {}).sort(), Object.entries(d.catalog || {}).map(([k, v]) => k + '@' + v.updatedAt).sort()]);
 const byNewest = (a, b) => String(b.timestamp || b.date || '').localeCompare(String(a.timestamp || a.date || ''));
 function applyMerged(remote) {
   const before = stateKey(S);
   S.deleted = mergeTombs(S.deleted, remote.deleted); S.deletedB = mergeTombs(S.deletedB, remote.deletedB);
-  S.entries = mergeById(S.entries, remote.entries, S.deleted).sort(byNewest);
+  S.entries = dedupeVonder(mergeById(S.entries, remote.entries, S.deleted)).sort(byNewest);
   S.budgetExp = mergeById(S.budgetExp, remote.budgetExp, S.deletedB);
   S.budgets = { ...(remote.budgets || {}), ...S.budgets };
   Object.entries(remote.catalog || {}).forEach(([k, v]) => { if (!S.catalog[k] || (v.updatedAt || '') > (S.catalog[k].updatedAt || '')) S.catalog[k] = v; });
@@ -3270,7 +3461,7 @@ async function boot() {
   initCloud();
   scheduleAutoSync();
   scheduleInbox(); if (ui.tab === 'settings') render();
-  if (kanachCloud()) { IDB.db && IDB.setMany({ cloudKey: cloudKey(), cloudBase: KANACH_PROXY }).catch(() => {}); setupPushSilently(); }
+  if (kanachCloud()) { IDB.db && IDB.setMany({ cloudKey: cloudKey(), cloudBase: KANACH_PROXY }).catch(() => {}); setupPushSilently(); waRefresh().then(w => { if (w?.configured) { pollWaResults(); if (S.settings.autoWA) waSendPending(); } }); }
   if (Carrier.configured()) setTimeout(() => syncCarrier({ manual: false }), 1200);
   document.addEventListener('visibilitychange', () => {
     const m = num(S.carrier.interval);

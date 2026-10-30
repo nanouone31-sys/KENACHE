@@ -10,9 +10,14 @@ let failed = 0, passed = 0;
 const eq = (name, got, want) => { const ok = JSON.stringify(got) === JSON.stringify(want); ok ? passed++ : failed++; console.log(`${ok ? '✓' : '✗'} ${name}${ok ? '' : `\n    got:  ${JSON.stringify(got)}\n    want: ${JSON.stringify(want)}`}`); };
 
 // ---- محاكي Yalidine + خدمة الإشعارات ----
-const yal = { statuses: {}, hits: [] }, pushes = [];
-const mock = http.createServer((req, res) => {
+const yal = { statuses: {}, hits: [] }, pushes = [], graphHits = [];
+const mock = http.createServer(async (req, res) => {
   const u = new URL(req.url, M);
+  if (u.pathname.startsWith('/graph/')) {
+    let b = ''; for await (const c of req) b += c;
+    graphHits.push({ path: u.pathname, auth: req.headers.authorization, body: JSON.parse(b || '{}') });
+    res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ messaging_product: 'whatsapp', messages: [{ id: 'wamid.T' + graphHits.length }] }));
+  }
   if (u.pathname.startsWith('/push/')) { pushes.push({ auth: req.headers.authorization, ttl: req.headers.ttl, aud: M }); res.writeHead(201); return res.end(); }
   if (u.pathname.startsWith('/v1/')) {
     yal.hits.push({ path: u.pathname, id: req.headers['x-api-id'] });
@@ -28,7 +33,7 @@ const mock = http.createServer((req, res) => {
   const bin = process.env.WRANGLER_BIN || require.resolve('wrangler/bin/wrangler.js', { paths: [ROOT] });
   const persist = fs.mkdtempSync(path.join(os.tmpdir(), 'kanach-wr-'));
   const wr = spawn(bin.endsWith('.js') ? process.execPath : bin, [...(bin.endsWith('.js') ? [bin] : []), 'dev', '--port', String(WPORT), '--ip', '127.0.0.1', '--test-scheduled', '--persist-to', persist,
-    '--var', `KANACH_KEY:${KEY}`, '--var', `YALIDINE_URL:${M}/v1`], { cwd: ROOT, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: '1' } });
+    '--var', `KANACH_KEY:${KEY}`, '--var', `YALIDINE_URL:${M}/v1`, '--var', `GRAPH_URL:${M}/graph`], { cwd: ROOT, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: '1' } });
   let log = ''; wr.stdout.on('data', d => log += d); wr.stderr.on('data', d => log += d);
   for (let i = 0; i < 60; i++) { try { const r = await fetch(W + '/__kanach'); if (r.ok) break; } catch {} await new Promise(r => setTimeout(r, 1000)); }
   const call = (p, opt = {}) => fetch(W + p, { ...opt, headers: { 'X-Kanach-Key': KEY, ...(opt.headers || {}) } });
@@ -94,6 +99,41 @@ const mock = http.createServer((req, res) => {
     const cfg = await (await call('/__kanach/config')).json();
     eq('حالة الإعداد', [cfg.notify, cfg.yalidine, cfg.subs, !!cfg.lastCron], [true, true, 1, true]);
 
+    // ---- حجز الطلبيات: جهازان مفتوحان لا يُنشئان طردين لنفس الطلبية ----
+    const claim = async (device, ids) => (await (await call('/__kanach/claim', { method: 'POST', body: JSON.stringify({ device, ids }) })).json()).claimed;
+    eq('الحجز: الطلبية لجهاز واحد', [await claim('pc', ['x', 'y']), await claim('phone', ['y', 'z']), await claim('pc', ['x'])], [['x', 'y'], ['z'], ['x']]);
+
+    // ---- واتساب: إعداد، إرسال قالب، Webhook موقّع من Meta، نتائج للتطبيق ----
+    const SECRET = 'app-secret-' + crypto.randomBytes(4).toString('hex');
+    const wc = await (await call('/__kanach/wa/config', { method: 'POST', body: JSON.stringify({ token: 'EAAtest', phoneId: '1055', template: 'kanach_order_confirm', appSecret: SECRET, lang: 'ar' }) })).json();
+    eq('إعداد واتساب: لا يكشف الأسرار', [wc.configured, wc.token, wc.appSecret, wc.verifyToken.length > 16, JSON.stringify(wc).includes('EAAtest') || JSON.stringify(wc).includes(SECRET)], [true, true, true, true, false]);
+    const hub = q => fetch(W + '/__kanach/wa/webhook?' + new URLSearchParams(q));
+    const v1 = await hub({ 'hub.mode': 'subscribe', 'hub.verify_token': wc.verifyToken, 'hub.challenge': '8812' }), v2 = await hub({ 'hub.mode': 'subscribe', 'hub.verify_token': 'nope', 'hub.challenge': '1' });
+    eq('تحقق Meta من الـWebhook (بلا مفتاح كناش)', [v1.status, await v1.text(), v2.status], [200, '8812', 403]);
+    const send = b => call('/__kanach/wa/send', { method: 'POST', body: JSON.stringify(b) }).then(r => r.json());
+    const s1 = await send({ id: 'fv-1', phone: '0661223344', name: 'سامي منصوري', vars: ['سامي', 'متجري', 'Montre Casio', '3 900', 'وهران'] });
+    const s2 = await send({ id: 'fv-1', phone: '0661223344', name: 'سامي منصوري', vars: ['سامي'] });
+    const s3 = await send({ id: 'fv-2', phone: '0550998877', name: 'كريم', vars: ['كريم', 'متجري', 'Casque', '2 500', 'الجزائر'] });
+    const g = graphHits[0];
+    eq('إرسال قالب التأكيد', [s1.ok, s1.msgId, s2.skipped, graphHits.length, g.path, g.auth, g.body.to, g.body.template.name, g.body.template.language.code, g.body.template.components[0].parameters.map(x => x.text)],
+      [true, 'wamid.T1', true, 2, '/graph/v23.0/1055/messages', 'Bearer EAAtest', '213661223344', 'kanach_order_confirm', 'ar', ['سامي', 'متجري', 'Montre Casio', '3 900', 'وهران']]);
+    const gc = graphHits.length, both = await Promise.all([send({ id: 'fv-9', phone: '0770000009', vars: ['a'] }), send({ id: 'fv-9', phone: '0770000009', vars: ['a'] })]);
+    eq('جهازان يرسلان في نفس اللحظة: رسالة واحدة', [graphHits.length - gc, both.filter(x => x.skipped).length], [1, 1]);
+    eq('رقم غير صالح لا يُرسل', (await send({ id: 'fv-3', phone: '0123', vars: [] })).error, 'رقم هاتف غير صالح');
+    const hook = (body, secret = SECRET) => { const raw = JSON.stringify(body); return fetch(W + '/__kanach/wa/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Hub-Signature-256': 'sha256=' + crypto.createHmac('sha256', secret).update(raw).digest('hex') }, body: raw }); };
+    const msg = (...messages) => ({ object: 'whatsapp_business_account', entry: [{ id: 'W', changes: [{ field: 'messages', value: { messaging_product: 'whatsapp', messages } }] }] });
+    const forged = await hook(msg({ from: '213661223344', type: 'text', text: { body: 'نعم' } }), 'wrong-secret');
+    const n1 = pushes.length;
+    const h1 = await hook(msg({ from: '213661223344', type: 'button', context: { id: 'wamid.T1' }, button: { text: 'نعم، أكّد الطلبية', payload: 'نعم، أكّد الطلبية' } }));
+    const h2 = await hook(msg({ from: '213550998877', type: 'text', text: { body: 'واش هو السعر الأخير؟' } }));
+    await new Promise(r => setTimeout(r, 300));
+    const wr1 = (await (await call('/__kanach/wa/results?after=')).json()).results;
+    eq('Webhook: توقيع مزوّر مرفوض، الردود تُصنَّف وتُشعِر', [forged.status, h1.status, h2.status, wr1.map(r => [r.id, r.result]), pushes.length - n1 >= 1, (await (await call('/__kanach/notes')).json()).notes.some(n => n.title.includes('أكّد') && n.body.includes('سامي'))],
+      [401, 200, 200, [['fv-1', 'yes'], ['fv-2', 'reply']], true, true]);
+    await hook(msg({ from: '213550998877', type: 'text', text: { body: 'لالا بدلت رأيي' } }));
+    const wr2 = (await (await call('/__kanach/wa/results?after=' + encodeURIComponent(wr1.at(-1).rid))).json()).results;
+    eq('النتائج الجديدة فقط بعد آخر قراءة', wr2.map(r => [r.id, r.result]), [['fv-2', 'no']]);
+
     // ---- التطبيق الحقيقي من رابط الـWorker: «هاتف» و«حاسوب» يتزامنان، وطلبيات FreeVendor تصل للاثنين ----
     const { chromium } = require('playwright');
     const browser = await chromium.launch();
@@ -124,6 +164,21 @@ const mock = http.createServer((req, res) => {
     await phone.p.waitForFunction(() => S.entries.some(e => e.vonderId === '000990001'), null, { timeout: 10000 });
     eq('طلبية FreeVendor وصلت للهاتف والحاسوب', [await phone.p.evaluate(() => S.entries.filter(e => e.vonderId === '000990001').length), await pc.p.evaluate(() => S.entries.filter(e => e.vonderId === '000990001').length)], [1, 1]);
     eq('المنتج سُجّل وحده بسعر البيع', await phone.p.evaluate(() => catalogGet('Dell Latitude 5490')?.price), 48800);
+    for (const d of [phone, pc]) await d.p.evaluate(() => cloudSync());
+    for (const d of [phone, pc]) await d.p.evaluate(() => cloudSync());
+    eq('بعد المزامنة: نسخة واحدة للطلبية على الجهازين', [await phone.p.evaluate(() => S.entries.filter(e => e.vonderId === '000990001').map(e => e.id)), await pc.p.evaluate(() => S.entries.filter(e => e.vonderId === '000990001').map(e => e.id))], [['fv-000990001'], ['fv-000990001']]);
+    // تأكيد عبر واتساب من البداية للنهاية: طلبية بانتظار التأكيد ← رسالة تلقائية ← الزبون يضغط «نعم» ← مؤكدة في كناش
+    const g0n = graphHits.length;
+    await phone.p.evaluate(async () => { await waRefresh(); S.settings.autoWA = true; saveSettings(); });
+    await phone.p.evaluate(() => receiveFv({ rows: [{ id: '000990002', status: ['En attente de confirmation'], prices: ['2500', '400', '2900', '3200'], seller: '300', name: 'ياسين', phone: '0698765432', wilaya: 'Oran',
+      detail: { client: 'ياسين بلقاسم', phone: '0698765432', wilaya: 'Oran', commune: 'Es Senia', items: [{ name: 'Écouteurs sans fil', qty: 1, price: 2500 }], total: 2500, fee: 400, sale: 3200, delivery: 'Livraison à domicile' } }] }));
+    for (let i = 0; i < 30 && graphHits.length === g0n; i++) await new Promise(r => setTimeout(r, 200));
+    const gh = graphHits.at(-1);
+    eq('رسالة واتساب أُرسلت وحدها للطلبية الجديدة', [graphHits.length - g0n, gh?.body.to, gh?.body.template.components[0].parameters.map(x => x.text)], [1, '213698765432', ['ياسين', 'كناش', 'Écouteurs sans fil', '3 200', 'وهران']]);
+    await hook(msg({ from: '213698765432', type: 'button', context: { id: 'wamid.T' + graphHits.length }, button: { text: 'نعم، أكّد الطلبية', payload: 'نعم، أكّد الطلبية' } }));
+    await phone.p.evaluate(() => cloudSync()); await pc.p.evaluate(() => cloudSync());
+    await pc.p.evaluate(async () => { await waRefresh(); await pollWaResults(); });
+    eq('الزبون ضغط «نعم» ← مؤكدة في كناش وجاهزة للرفع', await pc.p.evaluate(() => { const e = S.entries.find(x => x.vonderId === '000990002'); return [e.status, e.confirm.via, readyToPush().includes(e)]; }), ['pending', 'whatsapp', true]);
     // تفعيل مراقبة السحابة يرسل مفاتيح Yalidine إلى الـWorker
     await phone.p.evaluate(async () => { S.carrier.apiId = '777'; S.carrier.apiToken = 'tk'; await serverNotify(true); });
     eq('المراقبة من السحابة مفعّلة', await (await call('/__kanach/config')).json().then(c => [c.notify, c.yalidine]), [true, true]);

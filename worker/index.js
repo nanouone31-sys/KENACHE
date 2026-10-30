@@ -8,6 +8,7 @@ import { DurableObject } from 'cloudflare:workers';
 
 const UPSTREAM = 'https://api.yalidine.app/v1';
 const up = env => (env && env.YALIDINE_URL) || UPSTREAM; // قابل للتغيير للاختبار فقط
+const graph = env => (env && env.GRAPH_URL) || 'https://graph.facebook.com';
 const FV_ORIGIN = /^https:\/\/([a-z0-9-]+\.)*freevendor\.space$/i;
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -33,6 +34,8 @@ export default {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
     if (p === '/' || p === '/index.html') return env.ASSETS.fetch(new Request(new URL('/kanach.html', url), req));
     if (p === '/__kanach' || p === '/__kanach/') return json({ kanach: 'proxy', v: 5, post: true, inbox: true, cloud: true, push: true, keySet: !!env.KANACH_KEY });
+    if (p === '/__kanach/wa/webhook') // تستدعيه Meta: محمي برمز التحقق وتوقيع HMAC وليس بمفتاح كناش
+      return store(env).fetch(new Request('https://do/wa/webhook' + url.search, { method: req.method, headers: req.headers, body: req.method === 'POST' ? await req.arrayBuffer() : null }));
     if (p.startsWith('/__kanach/')) {
       if (!env.KANACH_KEY) return json({ error: 'KANACH_KEY غير مضبوط في إعدادات الـWorker' }, 503);
       if (p === '/__kanach/push/key') return store(env).fetch(new Request('https://do/push/key'));
@@ -134,9 +137,77 @@ export class KanachStore extends DurableObject {
       }
       if (p === '/push/test' && req.method === 'POST') { await this.note('كناش', 'الإشعارات تعمل على هذا الجهاز ✓', 'test'); return json(await this.pushAll()); }
       if (p === '/notes') return json({ notes: ((await S.get('notes')) || []).slice(-10) });
+      // ---- حجز الطلبيات قبل رفعها: جهاز واحد فقط ينشئ الطرد حتى لو كان كناش مفتوحاً على الهاتف والحاسوب ----
+      if (p === '/claim' && req.method === 'POST') {
+        const { ids, device } = await req.json(), now = Date.now(), claims = (await S.get('claims')) || {}, got = [];
+        Object.keys(claims).forEach(k => { if (now - claims[k].at > 10 * 60 * 1000) delete claims[k]; });
+        (ids || []).slice(0, 200).forEach(id => { id = String(id); if (!claims[id] || claims[id].device === device) { claims[id] = { device, at: now }; got.push(id); } });
+        await S.put('claims', claims); return json({ ok: true, claimed: got });
+      }
+      // ---- واتساب (WhatsApp Cloud API): إرسال رسالة التأكيد واستقبال رد الزبون ----
+      if (p === '/wa/config' && req.method === 'POST') {
+        const c = await req.json(), wa = { ...((await S.get('wa')) || {}) };
+        ['token', 'phoneId', 'template', 'lang', 'appSecret', 'graphVer'].forEach(k => { if (typeof c[k] === 'string' && c[k].trim()) wa[k] = c[k].trim(); });
+        if (!wa.verifyToken) wa.verifyToken = b64u(crypto.getRandomValues(new Uint8Array(18)));
+        await S.put('wa', wa); return json(waPublic(wa));
+      }
+      if (p === '/wa/config') return json(waPublic((await S.get('wa')) || {}));
+      if (p === '/wa/send' && req.method === 'POST') return json(await this.waSend(await req.json()));
+      if (p === '/wa/results') { const after = url.searchParams.get('after') || ''; return json({ results: ((await S.get('wa:results')) || []).filter(r => r.rid > after) }); }
+      if (p === '/wa/webhook' && req.method === 'GET') {
+        const wa = (await S.get('wa')) || {}, q = url.searchParams;
+        if (q.get('hub.mode') === 'subscribe' && wa.verifyToken && q.get('hub.verify_token') === wa.verifyToken) return new Response(q.get('hub.challenge') || '', { status: 200 });
+        return new Response('forbidden', { status: 403 });
+      }
+      if (p === '/wa/webhook' && req.method === 'POST') return this.waWebhook(req);
       if (p === '/cron' && req.method === 'POST') return json(await this.cron());
       return json({ error: 'not found' }, 404);
     } catch (e) { return json({ error: String(e?.message || e) }, 500); }
+  }
+
+  async waSend({ id, phone, name, vars, force }) {
+    const S = this.ctx.storage, wa = (await S.get('wa')) || {};
+    if (!wa.token || !wa.phoneId || !wa.template) return { error: 'إعداد واتساب غير مكتمل' };
+    const d = String(phone || '').replace(/\D/g, '').slice(-9); if (d.length !== 9) return { error: 'رقم هاتف غير صالح' };
+    const sent = (await S.get('wa:sent')) || {}, at = new Date().toISOString();
+    if (sent[id] && !force && (sent[id].msgId || Date.now() - Date.parse(sent[id].at) < 120000)) return { ok: true, skipped: true, msgId: sent[id].msgId };
+    // نحجزها قبل الاتصال بـMeta: أثناء انتظار الرد قد يصل طلب ثانٍ من جهاز آخر لنفس الطلبية
+    sent[id] = { to9: d, msgId: '', at, name: String(name || '').slice(0, 60) }; await S.put('wa:sent', sent);
+    const body = { messaging_product: 'whatsapp', to: '213' + d, type: 'template',
+      template: { name: wa.template, language: { code: wa.lang || 'ar' }, components: [{ type: 'body', parameters: (vars || []).map(v => ({ type: 'text', text: String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, 200) || '-' })) }] } };
+    const r = await fetch(`${graph(this.env)}/${wa.graphVer || 'v23.0'}/${wa.phoneId}/messages`, { method: 'POST', headers: { Authorization: `Bearer ${wa.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({})), now = (await S.get('wa:sent')) || {};
+    if (!r.ok) { delete now[id]; await S.put('wa:sent', now); return { error: j?.error?.message || `WhatsApp HTTP ${r.status}` }; }
+    const msgId = j?.messages?.[0]?.id || '';
+    now[id] = { ...sent[id], msgId };
+    const keys = Object.keys(now); if (keys.length > 500) keys.sort((a, b) => now[a].at.localeCompare(now[b].at)).slice(0, keys.length - 500).forEach(k => delete now[k]);
+    await S.put('wa:sent', now);
+    return { ok: true, msgId };
+  }
+  /* ردود الزبائن: زر القالب (type=button)، أزرار تفاعلية، أو نص حر «نعم/لا/oui/non…» */
+  async waWebhook(req) {
+    const S = this.ctx.storage, wa = (await S.get('wa')) || {}, raw = await req.arrayBuffer();
+    if (!wa.appSecret) return new Response('app secret not configured', { status: 403 });
+    const sig = (req.headers.get('X-Hub-Signature-256') || '').replace(/^sha256=/, '');
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(wa.appSecret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const mac = [...new Uint8Array(await crypto.subtle.sign('HMAC', key, raw))].map(b => b.toString(16).padStart(2, '0')).join('');
+    if (!sameKey(sig, mac)) return new Response('bad signature', { status: 401 });
+    let body; try { body = JSON.parse(new TextDecoder().decode(raw)); } catch { return new Response('ok'); }
+    const sent = (await S.get('wa:sent')) || {}, results = (await S.get('wa:results')) || [];
+    let made = 0;
+    for (const en of body.entry || []) for (const ch of en.changes || []) for (const m of ch.value?.messages || []) {
+      const from9 = String(m.from || '').replace(/\D/g, '').slice(-9);
+      const text = m.type === 'button' ? (m.button?.text || m.button?.payload || '') : m.type === 'interactive' ? (m.interactive?.button_reply?.title || m.interactive?.list_reply?.title || '') : m.type === 'text' ? (m.text?.body || '') : '';
+      let id = Object.keys(sent).find(k => m.context?.id && sent[k].msgId === m.context.id);
+      if (!id) id = Object.keys(sent).filter(k => sent[k].to9 === from9).sort((a, b) => sent[b].at.localeCompare(sent[a].at))[0];
+      if (!id) continue;
+      const result = classifyReply(text), name = sent[id].name || '';
+      results.push({ rid: new Date().toISOString() + '-' + Math.random().toString(36).slice(2, 6), id, result, text: String(text).slice(0, 300), at: new Date().toISOString(), from9 });
+      const msg = { yes: ['✅ الزبون أكّد طلبيته', `${name} — جاهزة للإرسال`], no: ['❌ الزبون ألغى طلبيته', name], reply: ['💬 ردّ زبون على التأكيد', `${name}: ${String(text).slice(0, 80)}`] }[result];
+      await this.note(msg[0], msg[1], 'wa-' + id, { stage: 'confirm-' + result }); made++;
+    }
+    if (made) { await S.put('wa:results', results.slice(-300)); await this.pushAll(); }
+    return new Response('ok');
   }
 
   async note(title, body, tag, extra = {}) {
@@ -215,6 +286,15 @@ export class KanachStore extends DurableObject {
     const push = made ? await this.pushAll() : null;
     return { checked: watch.length, notes: made, push };
   }
+}
+
+const waPublic = wa => ({ configured: !!(wa.token && wa.phoneId && wa.template && wa.appSecret), token: !!wa.token, phoneId: wa.phoneId || '', template: wa.template || '', lang: wa.lang || 'ar', appSecret: !!wa.appSecret, verifyToken: wa.verifyToken || '', graphVer: wa.graphVer || 'v23.0' });
+/* «نعم/إيه/oui/أكّد…» ← yes • «لا/non/ألغِ/ما نحبش…» ← no • غير ذلك ← reply (يعرضه كناش لتقرّر أنت) */
+function classifyReply(t) {
+  const s = ' ' + String(t || '').normalize('NFD').replace(/[̀-ًͯ-ٰٟ]/g, '').replace(/[أإآ]/g, 'ا').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ') + ' ';
+  const no = / (لا|لالا|non|no|nn|annul\p{L}*|الغ\p{L}*|ما نحبش|منحبش|مانحبش|ماحبيتش|ما حبيتش|بدلت|مانيش|ماراني|ماكانش|cancel\p{L}*) /u.test(s);
+  const yes = / (نعم|ايه|ايوه|اه|واه|وي|ok|okay|oui|wi|yes|confirm\p{L}*|اكد\p{L}*|ناكد\p{L}*|نكد\p{L}*|مؤكد\p{L}*|صح|موافق|ابعث\p{L}*|بعث\p{L}*|حاب|d accord|dacord) /u.test(s);
+  return no && yes ? 'reply' : no ? 'no' : yes ? 'yes' : 'reply'; // «لا باس، ابعثها» فيها الاثنان: تقرّر أنت
 }
 
 /* نفس تصنيف كناش لحالات Yalidine (مختصر) */

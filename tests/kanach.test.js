@@ -274,7 +274,7 @@ const eq = (name, got, want) => {
       await lp.close();
       eq('الملصق عُلِّم كمطبوع', await page.evaluate(() => [!!S.entries[0].labelPrintedAt, labelQueue().length]), [true, 0]);
     }
-    eq('الإعدادات مطوية وتنفتح على القسم المطلوب', await page.evaluate(() => { go('settings', { scrollTo: 'sec-fees' }); return [document.querySelectorAll('details.set').length, document.getElementById('sec-fees').open, document.getElementById('sec-cloud').open]; }), [11, true, false]);
+    eq('الإعدادات مطوية وتنفتح على القسم المطلوب', await page.evaluate(() => { go('settings', { scrollTo: 'sec-fees' }); return [document.querySelectorAll('details.set').length, document.getElementById('sec-fees').open, document.getElementById('sec-cloud').open]; }), [12, true, false]);
 
     // ---- منتجاتي: سعر الشراء والبيع والعمولة، وملء النموذج تلقائياً ----
     eq('اقتصاديات المنتج', await page.evaluate(() => { const e = productEcon({ cost: 45000, price: 48800 }); return [e.fee, e.profit, Math.round(e.margin * 1000) / 10, e.customer]; }), [2700, 1100, 2.3, 49950]);
@@ -332,6 +332,82 @@ const eq = (name, got, want) => {
       const inp = document.querySelector(`[data-cp=cost][data-k="${prodKey('Dell Latitude 5490')}"]`); inp.value = '45000'; inp.dispatchEvent(new Event('change', { bubbles: true }));
       return [c1.price, c1.cost || 0, c2.cost, c2.price, catalogGet('Dell Latitude 5490').cost, S.entries[0].profitAssumed, Math.round(S.entries[0].grossProfit), before !== Math.round(S.entries[0].amount)];
     }), [48800, 0, 3000, 3680, 45000, false, 1100, true]);
+    // ---- تأكيد الطلبيات: En attente de confirmation ← اتصال/واتساب ← مؤكدة ← Yalidine ----
+    const fvRow = (id, status, name, phone, product) => ({ id, status: [status], prices: ['3000', '400', '3400', '3900'], seller: '500', name, phone, wilaya: 'Oran',
+      detail: { client: name, phone, wilaya: 'Oran', commune: 'Bir El Djir', items: [{ name: product, qty: 1, price: 3000 }], total: 3000, fee: 400, sale: 3900, delivery: 'Livraison à domicile' } });
+    eq('استيراد «بانتظار التأكيد» كطابور منفصل', await page.evaluate(rows => {
+      S.entries = []; S.deleted = {}; resetSigs();
+      const r = importVonder(rows); commit();
+      const w = S.entries.find(e => e.vonderId === '000770001'), c = S.entries.find(e => e.vonderId === '000770002');
+      return [r.added, r.toconfirm, w.id, w.status, w.confirm.attempts, c.status, Q.toconfirm(w)];
+    }, [fvRow('000770001', 'En attente de confirmation', 'Sami Mansouri', '0661223344', 'Montre Casio'), fvRow('000770002', 'Confirmé avec le client', 'Nadia', '0770112233', 'Sac cuir')]),
+      [1, 1, 'fv-000770001', 'toconfirm', 0, 'pending', true]);
+    eq('ما ينتظر التأكيد لا يدخل الأرباح ولا الرفع', await page.evaluate(() => { const st = computeStats(S.entries); return [st.orders.length, st.pending.length, readyToPush().some(e => e.status === 'toconfirm')]; }), [1, 1, false]);
+    eq('تنبيه في الرئيسية', await page.evaluate(() => { go('home'); return document.body.innerText.includes('1 طلبية تنتظر تأكيد الزبون'); }), true);
+    eq('رسالة التأكيد بالدارجة وبيانات الطلبية', await page.evaluate(() => { const v = confirmVars(S.entries.find(e => e.vonderId === '000770001')); const m = fillMsg('', v); return [v.name, v.phone, v.wilaya, m.includes('Montre Casio'), m.includes('3\u00A0900'), m.includes('نعم')]; }), ['Sami', '0661223344', 'وهران', true, true, true]);
+    await page.evaluate(() => openConfirm());
+    eq('شاشة التأكيد', await page.evaluate(() => [document.querySelectorAll('#cfList [data-act=cf-yes]').length, /ما تقوله في المكالمة/.test(document.getElementById('cfList').innerText)]), [1, true]);
+    let waUrl = '';
+    await page.exposeFunction('__waOpen', u => { waUrl = u; });
+    await page.evaluate(() => { window.open = u => { window.__waOpen(u); return null; }; });
+    await page.click('#cfList [data-act=cf-wa]');
+    await page.waitForTimeout(200);
+    eq('واتساب يدوي: الرسالة جاهزة للرقم الصحيح', [/^https:\/\/wa\.me\/213661223344\?text=/.test(waUrl), decodeURIComponent(waUrl).includes('Montre Casio')], [true, true]);
+    await page.click('#cfList [data-act=cf-noans]');
+    eq('لم يرد: تُحسب المحاولة', await page.evaluate(() => S.entries.find(e => e.vonderId === '000770001').confirm.attempts), 1);
+    await page.click('#cfList [data-act=cf-yes]');
+    await page.waitForTimeout(150);
+    eq('أكّد: صارت معلّقة وجاهزة للرفع', await page.evaluate(() => { const e = S.entries.find(e => e.vonderId === '000770001'); return [e.status, e.confirm.result, e.confirm.via, !!e.confirmedAt, readyToPush().includes(e)]; }), ['pending', 'yes', 'whatsapp', true, true]);
+    // إلغاء بسبب، ثم إعادة فتحها
+    await page.evaluate(rows => { importVonder(rows); commit(); openConfirm(); }, [fvRow('000770003', 'En attente de confirmation', 'Karim', '0550998877', 'Casque JBL')]);
+    await page.click('#cfList [data-act=cf-no]');
+    await page.fill('#dlgInput', 'غالية');
+    await page.click('#dlgOk');
+    await page.waitForTimeout(150);
+    eq('ألغى: تُحفظ مع السبب ولا تُحسب', await page.evaluate(() => { const e = S.entries.find(e => e.vonderId === '000770003'); return [e.status, e.confirm.reason, computeStats(S.entries).orders.includes(e), buildCustomers().find(c => c.phone === '0550998877')?.cancelled]; }), ['cancelled', 'غالية', false, 1]);
+    eq('FreeVendor يؤكّد أو يلغي ما ينتظر', await page.evaluate(rows => {
+      importVonder([rows[0]]); const r = importVonder(rows.slice(1)); const g = id => S.entries.find(e => e.vonderId === id)?.status ?? null;
+      return [r.promoted, r.cancelled, g('000770004'), g('000770005')];
+    }, [fvRow('000770004', 'En attente de confirmation', 'Amel', '0699887766', 'Parfum'), fvRow('000770004', 'Confirmé avec le client', 'Amel', '0699887766', 'Parfum'), fvRow('000770005', 'Annulé', 'X', '0551000000', 'Y')]),
+      [1, 0, 'pending', null]);
+    eq('ما حذفته لا يعود من FreeVendor', await page.evaluate(rows => { const e = S.entries.find(x => x.vonderId === '000770004'); S.entries = S.entries.filter(x => x !== e); S.deleted[e.id] = new Date().toISOString(); const r = importVonder(rows); return [r.added, S.entries.some(x => x.vonderId === '000770004')]; },
+      [fvRow('000770004', 'Confirmé avec le client', 'Amel', '0699887766', 'Parfum')]), [0, false]);
+    // ردود واتساب من السحابة: نعم ← مؤكدة، لا ← ملغاة، غير ذلك ← يُعرض عليك
+    eq('ردود واتساب تُطبَّق وحدها', await page.evaluate(async rows => {
+      importVonder(rows); commit();
+      const [a, b, c] = ['000770006', '000770007', '000770008'].map(v => S.entries.find(e => e.vonderId === v).id);
+      const real = { kcFetch: window.kcFetch, autoPush: window.autoPush };
+      const caps = KANACH_CAPS; KANACH_CAPS = { ...(caps || {}), cloud: true }; localStorage.setItem('kanach_cloud_key', 'test'); window.autoPush = async () => null; ui.wa = { configured: true };
+      localStorage.removeItem('kanach_wa_after');
+      window.kcFetch = async path => new Response(JSON.stringify({ results: [{ rid: '1', id: a, result: 'yes', text: 'نعم، أكّد الطلبية', at: iso() }, { rid: '2', id: b, result: 'no', text: 'لا', at: iso() }, { rid: '3', id: c, result: 'reply', text: 'واش هو السعر؟', at: iso() }] }));
+      await pollWaResults();
+      Object.assign(window, real); KANACH_CAPS = caps; localStorage.removeItem('kanach_cloud_key'); ui.wa = null;
+      const g = id => S.entries.find(e => e.id === id);
+      return [g(a).status, g(a).confirm.via, g(b).status, g(c).status, g(c).confirm.reply, localStorage.getItem('kanach_wa_after')];
+    }, ['000770006', '000770007', '000770008'].map((v, i) => fvRow(v, 'En attente de confirmation', 'Client' + i, '066000000' + i, 'P' + i))), ['pending', 'whatsapp', 'cancelled', 'toconfirm', 'واش هو السعر؟', '3']);
+    eq('إرسال واتساب التلقائي: مرة واحدة لكل طلبية', await page.evaluate(async () => {
+      const real = { kcFetch: window.kcFetch }, sent = [];
+      const caps = KANACH_CAPS; KANACH_CAPS = { ...(caps || {}), cloud: true }; localStorage.setItem('kanach_cloud_key', 'test'); ui.wa = { configured: true }; S.settings.autoWA = true;
+      window.kcFetch = async (path, o) => { const b = JSON.parse(o.body); sent.push(b); return new Response(JSON.stringify({ ok: true })); };
+      const n1 = await waSendPending(), n2 = await waSendPending();
+      Object.assign(window, real); KANACH_CAPS = caps; localStorage.removeItem('kanach_cloud_key'); ui.wa = null; S.settings.autoWA = false;
+      return [n1, n2, sent[0].phone, sent[0].vars.length, sent[0].vars[1]];
+    }), [1, 0, '0660000002', 5, 'كناش']);
+    // جهازان استوردا نفس الطلبية قبل أن يتزامنا: تبقى واحدة
+    eq('لا تكرار لطلبية FreeVendor بين الجهازين', await page.evaluate(() => {
+      const e = S.entries.find(x => x.vonderId === '000770002'), twin = { ...e, id: 'old-uid-1', tracking: 'yal-ABC123', updatedAt: new Date().toISOString() };
+      applyMerged({ entries: [...S.entries, twin], deleted: {}, deletedB: {}, budgets: {}, budgetExp: [] });
+      const left = S.entries.filter(x => x.vonderId === '000770002');
+      return [left.length, left[0].tracking, !!S.deleted[e.id]];
+    }), [1, 'yal-ABC123', true]);
+    eq('حجز الطلبية قبل الرفع: الجهاز الآخر لا يُنشئ طرداً ثانياً', await page.evaluate(async () => {
+      const real = { kcFetch: window.kcFetch };
+      const caps = KANACH_CAPS; KANACH_CAPS = { ...(caps || {}), cloud: true }; localStorage.setItem('kanach_cloud_key', 'test'); window.kcFetch = async () => new Response(JSON.stringify({ ok: true, claimed: ['a1'] }));
+      const r = await claimRows([{ e: { id: 'a1' } }, { e: { id: 'b2' } }]);
+      Object.assign(window, real); KANACH_CAPS = caps; localStorage.removeItem('kanach_cloud_key');
+      return [r.mine.map(x => x.e.id), r.busy.map(x => x.e.id), /جهازك الآخر/.test(r.busy[0].err)];
+    }), [['a1'], ['b2'], true]);
+    eq('فلتر «للتأكيد» في الطلبيات', await page.evaluate(() => { go('orders', { filter: 'toconfirm', search: '', limit: 40 }); return document.querySelectorAll('[data-act=cf-yes], .stage.toconfirm, [data-act=open-entry]').length > 0 && document.body.innerText.includes('Client2'); }), true);
     eq('الشعار في الواجهة', await page.evaluate(() => !!document.querySelector('.topbar .logo svg') && !!document.querySelector('.side .logo svg')), true);
   } catch (e) { failed++; console.error('✗ استثناء:', e); }
   await browser.close(); proxy.kill(); try { require('fs').unlinkSync(inboxFile); } catch {}
