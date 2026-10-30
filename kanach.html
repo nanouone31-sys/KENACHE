@@ -191,7 +191,7 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:14px 0}
 .att:hover,.oc:hover{background:var(--sunk)}
 .ico{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;flex:none}
 .ico.wait{background:var(--wait-soft);color:var(--wait)} .ico.neg{background:var(--loss-soft);color:var(--loss)} .ico.info{background:var(--info-soft);color:var(--info)} .ico.pos{background:var(--profit-soft);color:var(--profit)}
-.att b{display:block;font-size:14px;font-weight:600} .att span{font-size:12.5px;color:var(--ink-3)}
+.att b{display:block;font-size:14px;font-weight:600;color:var(--ink)} .att span{font-size:12.5px;color:var(--ink-3)}
 .att .go{color:var(--ink-3);transform:scaleX(-1)}
 .dayh{margin:20px 6px 8px;font-size:12.5px;font-weight:700;color:var(--ink-3);letter-spacing:.2px}
 .oc{display:flex;gap:14px;align-items:center;width:100%;padding:14px 16px;transition:background .15s}
@@ -309,21 +309,31 @@ section[id^="sec-"]>b:first-child,.card.pad>b:first-child{font-size:15.5px}
 @media (min-width:760px){.sheet{bottom:4vh;border-radius:var(--r-l)}}
 @media (max-width:380px){.two{grid-template-columns:1fr}}
 
-.chat{max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:4px 2px}
-.msg{padding:10px 13px;border-radius:14px;max-width:88%;font-size:14px;line-height:1.65;white-space:pre-wrap}
-.msg.u{align-self:flex-start;background:var(--brand);color:var(--on-brand);border-end-start-radius:4px}
-.msg.a{align-self:flex-end;background:var(--sunk);border:1px solid var(--line);border-end-end-radius:4px}
 .home-grid>div{min-width:0}
 .brand .logo{display:block;background:none;border-radius:10px}
 .stg .k{white-space:nowrap}
 @media (min-width:1000px){.pipe{grid-template-columns:repeat(5,1fr);overflow:visible}}
-.home-full{margin-top:4px}
+.flow{padding:4px 0 6px}
+.flow-h{display:flex;justify-content:space-between;align-items:center;padding:12px 16px 4px}.flow-h b{font-size:15.5px}
+.flow-h .lnk{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:600;color:var(--brand)}
+.flow ol{list-style:none;margin:0;padding:0}.flow li{position:relative}
+.flow li:not(:last-child)::after{content:"";position:absolute;inset-inline-start:32px;top:44px;bottom:-12px;width:2px;background:var(--line)}
+.flow .st{display:flex;align-items:center;gap:12px;width:100%;padding:11px 16px;text-align:start;transition:background .15s}
+.flow .st:hover{background:var(--sunk)}
+.flow .dot{position:relative;z-index:1;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex:none;font-weight:700;font-size:14px;background:var(--brand);color:var(--on-brand)}
+.flow li.done .dot{background:var(--card);color:var(--profit);border:1.5px solid var(--line)}
+.flow .tx b{display:block;font-size:14.5px;font-weight:600}.flow .tx small{display:block;font-size:12.5px;color:var(--ink-3);margin-top:1px}
+.flow li.done .tx b{color:var(--ink-2);font-weight:500}
+.flow li.todo .dot{background:var(--wait-soft);color:var(--wait);border:1.5px dashed var(--wait)}.flow li.todo .tx small{color:var(--wait)}
+.flow .n{font-weight:700;font-size:18px;color:var(--brand);white-space:nowrap;font-variant-numeric:tabular-nums}
+.flow .go{color:var(--ink-3);transform:scaleX(-1);flex:none}
+@media (min-width:1000px){.home-grid{grid-template-areas:'hero flow' 'alerts flow'}.g-hero{grid-area:hero}.g-flow{grid-area:flow}.g-alerts{grid-area:alerts}.g-alerts .sec{margin-top:4px}}
+.g-alerts .sec{margin-top:10px}
 .track .seg4{width:84px}
 .track .tl2{flex:none}
 .track .raw{min-width:0}
 
 /* ---------- v4: calculator, call list, fees ---------- */
-@media (min-width:1000px){#btnSettings{display:none}}
 .calc-grid{display:grid;gap:14px}
 @media (min-width:1000px){.calc-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start;gap:22px}}
 .answer{position:relative;overflow:hidden;border-radius:var(--r-l);padding:20px 22px;color:#F2F5F3;background:linear-gradient(160deg,#16524A 0%,#0E3A34 100%)}
@@ -377,10 +387,8 @@ details.set .ico{width:34px;height:34px;border-radius:10px}details.set>.inner{pa
 <header class="topbar">
   <div class="wrap">
     <div class="brand"><span class="logo" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="15" fill="#12463F"/><rect x="13" y="13" width="38" height="40" rx="5" fill="#F3F1EC"/><path d="M42 13v40" stroke="#D86A50" stroke-width="2.6"/><path d="M18 26h19M18 33h19M18 40h19M18 47h19" stroke="#C9D9D3" stroke-width="1.8" stroke-linecap="round"/><path d="M19 44l6-6.5 4.5 3.5 7.5-9" fill="none" stroke="#1D7A4B" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M31.5 31.5h5.5v5.5" fill="none" stroke="#1D7A4B" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><g fill="#12463F"><circle cx="22" cy="13" r="2.6"/><circle cx="32" cy="13" r="2.6"/></g><g fill="none" stroke="#F3F1EC" stroke-width="2.2" stroke-linecap="round"><path d="M22 13V7.5"/><path d="M32 13V7.5"/></g></svg></span><div class="bt"><b id="appName">كناش</b><span id="appSub"></span></div></div>
-    <button class="iconbtn" data-act="carrier-sync" id="btnCarrier" aria-label="تحديث حالة الطلبيات من شركة التوصيل" title="تحديث من شركة التوصيل"></button>
-    <button class="iconbtn" data-act="go" data-tab="settings" data-sub="cloud" id="btnCloud" aria-label="حالة المزامنة السحابية" title="المزامنة السحابية"></button>
+    <button class="iconbtn" data-act="sync-all" id="btnCarrier" aria-label="تحديث الطلبيات والمزامنة" title="تحديث"></button>
     <button class="iconbtn" data-act="theme" id="btnTheme" aria-label="تبديل المظهر"></button>
-    <button class="iconbtn" data-act="go" data-tab="settings" id="btnSettings" aria-label="الإعدادات" title="الإعدادات"></button>
   </div>
 </header>
 <div class="wrap"><main id="view" tabindex="-1"></main></div>
@@ -455,7 +463,7 @@ const ic = (n, s = 20) => `<svg class="ic" viewBox="0 0 24 24" width="${s}" heig
 
 const LS = {
   entries:'dailyEntries_v2', budgetExp:'budgetExpenses', budgets:'monthlyBudgets',
-  settings:'kanach_settings_v1', carrier:'kanach_carrier_v1', theme:'theme', apiKey:'claude_api_key',
+  settings:'kanach_settings_v1', carrier:'kanach_carrier_v1', theme:'theme',
   jbId:'jsonbin_id', jbKey:'jsonbin_key', device:'device_id', lastChange:'local_last_change', draft:'kanach_last_vonder', cloudSeen:'kanach_cloud_seen'
 };
 const DEFAULT_SETTINGS = { appName:'كناش', adsPaused:true, defPrice:11700, defProfit:1048, defSeller:1150, defTaxe:250, soundAlert:true, browserNotif:false,
@@ -489,7 +497,7 @@ const DATA_KEYS = { entries: LS.entries, budgetExp: LS.budgetExp, budgets: LS.bu
 const S = { entries: [], budgetExp: [], budgets: {}, deleted: {}, deletedB: {}, catalog: {}, settings: { ...DEFAULT_SETTINGS }, carrier: { ...DEFAULT_CARRIER } };
 const ui = {
   tab:'home', period:'month', filter:'all', search:'', limit:40, rTab:'summary', rPeriod:'month', crmQ:'', crmF:'all',
-  review:null, syncing:false, cloud:'idle', cloudMsg:'', chat:[], setSub:'', budgetMonth:iso().slice(0, 7), openSetup:null, calc:null
+  review:null, syncing:false, cloud:'idle', cloudMsg:'', setSub:'', calc:null
 };
 
 async function loadAll() {
@@ -516,7 +524,7 @@ async function loadAll() {
 }
 
 /* ---- نسخ احتياطية تلقائية داخل المتصفح: قبل كل تحديث لكناش، وأسبوعياً. تُحفظ آخر 6 ويمكن استعادتها بنقرة ---- */
-const APP_VERSION = '10';
+const APP_VERSION = '11';
 async function snapshots() { if (!IDB.db) return []; try { return (await IDB.get('snapshots')) || []; } catch { return []; } }
 async function saveSnapshot(reason) {
   if (!IDB.db) return false;
@@ -1223,7 +1231,7 @@ function appSection() {
     <div class="sw"><div class="tx"><b>تثبيت كتطبيق</b><span>${isStandalone() ? 'مثبّت على هذا الجهاز ✓' : INSTALL_EVT ? 'أيقونة على الشاشة الرئيسية، يفتح كتطبيق ويعمل بلا إنترنت' : isIOS() ? 'Safari: زر المشاركة ← «إضافة إلى الشاشة الرئيسية»' : 'من قائمة المتصفح ⋮ ← «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية»'}</span></div>${INSTALL_EVT && !isStandalone() ? `<button class="btn sm" data-act="app-install">تثبيت</button>` : ''}</div>
     ${key ? `<div class="sw"><div class="tx"><b>إشعارات على هذا الجهاز</b><span>${pushOn ? 'مفعّلة ✓ — تصلك حتى وكناش مغلق' : 'تسليم، خروج للتسليم، فشل، إرجاع'}</span></div>${pushOn ? `<button class="btn sec2 sm" data-act="push-test">تجربة</button>` : `<button class="btn sm" data-act="push-on">فعّل</button>`}</div>
     <div class="sw"><div class="tx"><b>مراقبة Yalidine من السحابة</b><span>كل 15 دقيقة يفحص طلبياتك المعلّقة ويرسل الإشعار. يحتاج حفظ مفاتيح Yalidine في Cloudflare الخاص بك.${srv?.lastCron ? ` آخر فحص: ${timeAgo(srv.lastCron)}.` : ''}</span></div><label class="toggle"><input type="checkbox" id="srvNotify" ${localStorage.getItem('kanach_srvnotify') === '1' ? 'checked' : ''} aria-label="مراقبة من السحابة"><i></i></label></div>` : ''}`;
-  return setSec('sec-app', 'phone', 'كناش على الهاتف والحاسوب', hint, inner);
+  return setSec('sec-app', 'phone', 'الهاتف والحاسوب والإشعارات', hint, inner + `<hr class="sep">${notifRowsHTML()}${jsonbinHTML()}`);
 }
 async function kcFetch(path, opt = {}) {
   const r = await fetch(KANACH_PROXY + '/__kanach' + path, { ...opt, cache: 'no-store', headers: kcHeaders(opt.headers || {}) });
@@ -1657,7 +1665,7 @@ function syncTargets() {
 
 async function syncCarrier({ manual = true } = {}) {
   if (ui.syncing) return;
-  if (!Carrier.configured()) { if (manual) { toast('اربط Yalidine أولاً لتحديث الطلبيات تلقائياً.'); go('carrier'); } return; }
+  if (!Carrier.configured()) { if (manual) { toast('اربط Yalidine أولاً لتحديث الطلبيات تلقائياً.'); go('settings', { scrollTo: 'sec-yalidine' }); } return; }
   const targets = syncTargets();
   if (!targets.length) { S.carrier.lastSync = new Date().toISOString(); saveCarrier(); if (manual) toast('لا توجد طلبيات بأرقام تتبع تحتاج متابعة.'); render(); return; }
   ui.syncing = true; render();
@@ -1811,30 +1819,46 @@ function trackHTML(e) {
 const FILTERS = [['all','الكل'], ['toconfirm','للتأكيد'], ['pending','في الطريق'], ['delivered','مُسلَّمة'], ['returned','مرتجعة'], ['fin','مصاريف']];
 const SPECIAL = { cancelled:'ملغاة عند التأكيد', s_prep:'تحضير', s_transit:'في الطريق', s_out:'خرجت للتسليم', notrack:'بدون رقم تتبع', risk:'راجعة / فاشلة', stale:'معلّقة +7 أيام', est:'فائدة تقديرية', mismatch:'مبلغ مختلف' };
 
+/* التنبيهات: ما يحتاج تدخّلك خارج مسار الطلبيات (زبائن للاتصال، مبالغ مختلفة، طرود متأخرة…) */
 function attentionItems() {
   const E = S.entries, out = [];
   const add = (k, tone, icon, t, s) => { const n = E.filter(Q[k]).length; if (n) out.push({ k, tone, icon, t: `${n} ${t}`, s }); };
-  const calls = callList().length, ready = Carrier.configured() ? readyToPush().length : 0, labels = labelQueue().length;
-  const tc = toConfirmList().length;
-  if (tc) out.unshift({ act: 'cf-open', tone: 'info', icon: 'phone', t: `${tc} طلبية تنتظر تأكيد الزبون`, s: ui.wa?.configured ? 'رسائل واتساب التلقائية + الردود' : 'اتصال أو واتساب بنقرة، ثم «أكّد» أو «ألغى»' });
-  const dues = duesTotals(duesList());
-  if (dues.n) out.push({ go: 'reports', sub: 'settle', tone: 'wait', icon: 'wallet', t: `${moneyT(dues.total)} عليك تسديدها`, s: `عمولة ${fmtNum(dues.fee)} + فائدة البائعين ${fmtNum(dues.seller)} (${dues.n} طلبية مُسلَّمة)` });
-  if (ready) out.push({ act: 'push-open', tone: 'info', icon: 'upload', t: `${ready} طلبية جاهزة للرفع إلى Yalidine`, s: 'مطابقة الولاية والبلدية ثم إنشاء الطرود' });
-  if (labels) out.push({ act: 'labels-open', tone: 'info', icon: 'download', t: `${labels} ملصق شحن لم يُطبع`, s: 'باركود رقم التتبع + الزبون + المبلغ' });
-  if (calls) out.push({ act: 'call-open', tone: 'neg', icon: 'phone', t: `اتصل اليوم: ${calls} زبون`, s: 'رسائل واتساب جاهزة للفاشلة والخارجة للتسليم والمتأخرة' });
-  add('risk', 'neg', 'undo', 'طلبية راجعة أو فاشلة التسليم', 'تواصل مع الزبون قبل أن تُرجَع إليك');
+  const calls = callList().length;
+  if (calls) out.push({ act: 'call-open', tone: 'neg', icon: 'phone', t: `اتصل اليوم: ${calls} زبون`, s: 'فشل التسليم أو خرجت للتسليم أو تأخرت — الرسائل جاهزة' });
   add('mismatch', 'wait', 'alert', 'طلبية مبلغها عند Yalidine يختلف عن سعر الزبون', 'راجع السعر قبل التسليم');
   add('stale', 'wait', 'clock', 'طلبية معلّقة منذ أكثر من 7 أيام', 'تحقّق من حالتها');
   add('notrack', 'info', 'link', 'طلبية بلا رقم تتبع', 'لا تُتابَع تلقائياً حتى تضيف رقم التتبع');
-  add('est', 'info', 'info', 'طلبية فائدتها تقديرية', 'ارفع ملف Yalidine لتأكيد Net الحقيقي');
+  const noCost = myProductsList().filter(p => !(num(p.c?.cost) > 0)).length;
+  if (noCost) out.push({ go: 'products', sub: 'products', tone: 'wait', icon: 'box', t: `${noCost} منتج بلا سعر شراء`, s: 'أدخله مرة واحدة لتُحسب فائدتك الحقيقية' });
   const losing = buildProductStats(periodRange('30d')).filter(p => p.decision === 'stop');
-  if (losing.length) out.push({ go: 'reports', sub: 'products', tone: 'neg', icon: 'chart', t: `${losing.length} منتج يخسر لكل طرد مُرسَل`, s: losing.slice(0, 2).map(p => p.name.slice(0, 30)).join('، ') });
+  if (losing.length) out.push({ go: 'products', sub: 'perf', tone: 'neg', icon: 'chart', t: `${losing.length} منتج يخسر لكل طرد مُرسَل`, s: losing.slice(0, 2).map(p => p.name.slice(0, 30)).join('، ') });
   return out;
 }
+/* مسار الطلبية: خمس خطوات بالترتيب الذي تعمل به، لكل خطوة عدد ونقرة واحدة */
+function flowSteps() {
+  const conf = Carrier.configured(), tc = toConfirmList().length, ready = conf ? readyToPush().length : 0, labels = labelQueue().length;
+  const pend = S.entries.filter(e => Q.pending(e) && cleanTrack(e.tracking)), out = pend.filter(e => ['out', 'risk'].includes(stageOf(e))).length;
+  const dues = duesTotals(duesList());
+  return [
+    { t: 'تأكيد مع الزبون', n: tc, act: 'cf-open', s: tc ? (ui.wa?.configured && S.settings.autoWA ? 'واتساب يُرسَل وحده، و«نعم» تؤكّدها' : 'اتصال أو واتساب بنقرة') : 'لا طلبيات تنتظر' },
+    { t: 'رفع إلى Yalidine', n: ready, act: conf ? 'push-open' : '', go: conf ? '' : 'settings|yalidine', todo: !conf, s: !conf ? 'اربط Yalidine أولاً' : ready ? 'مطابقة البلدية ثم إنشاء الطرود' : S.settings.autoPush ? 'تلقائي فور التأكيد' : 'لا شيء جاهز' },
+    { t: 'طباعة الملصقات', n: labels, act: 'labels-open', s: labels ? 'باركود + الزبون + المبلغ' : 'كلها مطبوعة' },
+    { t: 'في الطريق', n: pend.length, go: 'orders||pending', s: pend.length ? `${out ? out + ' خرجت للتسليم • ' : ''}${fmtNum(sum(pend, e => e.amount))} دج متوقعة` : 'لا طرود في الطريق' },
+    { t: 'التسديد', n: dues.n, label: dues.n ? fmtNum(dues.total) : '', go: 'reports|settle', s: dues.n ? `عمولة ${fmtNum(dues.fee)} + فائدة البائعين ${fmtNum(dues.seller)} دج` : 'لا شيء عليك' }
+  ];
+}
+function flowHTML() {
+  const auto = kanachCloud() || KANACH_PROXY;
+  const attrs = x => { if (x.act) return `data-act="${x.act}"`; const [tab, sub, filter] = x.go.split('|'); return `data-act="go" data-tab="${tab}"${sub ? ` data-sub="${sub}"` : ''}${filter ? ` data-filter="${filter}"` : ''}`; };
+  return `<section class="card flow" aria-label="مسار الطلبيات"><div class="flow-h"><b>مسار الطلبيات</b>${auto ? '' : `<button class="lnk" data-act="fv-paste">${ic('download', 15)} لصق من FreeVendor</button>`}</div>
+    <ol>${flowSteps().map((x, i) => `<li class="${x.todo ? 'todo' : x.n ? 'on' : 'done'}"><button class="st" ${attrs(x)}><span class="dot">${x.todo ? ic('link', 16) : x.n ? i + 1 : ic('check', 16)}</span><span class="tx grow"><b>${x.t}</b><small>${x.s}</small></span>${x.n ? `<span class="n">${x.label || x.n}</span>` : ''}<span class="go">${ic('chev', 18)}</span></button></li>`).join('')}</ol></section>`;
+}
 
-const TABS = [['home','الرئيسية','home'], ['orders','الطلبيات','list'], ['calc','الحاسبة','calc'], ['carrier','التوصيل','truck'], ['reports','التقارير','chart']];
-const SIDE_TABS = [...TABS, ['settings','الإعدادات','sliders']];
-function go(tab, extra = {}) { if (Sheet.isOpen()) Sheet.close(); ui.tab = tab; Object.assign(ui, extra); const target = ui.scrollTo; if (target && /^sec-/.test(target)) (ui.secOpen = ui.secOpen || {})[target] = true; render(); if (!target) window.scrollTo({ top: 0 }); }
+const TABS = [['home','الرئيسية','home'], ['orders','الطلبيات','list'], ['products','المنتجات','box'], ['reports','الأرباح','chart'], ['settings','الإعدادات','sliders']];
+const SIDE_TABS = TABS;
+const TAB_ALIAS = { calc: ['products', null, 'calc'], carrier: ['settings', 'sec-yalidine'] }; // روابط قديمة
+function go(tab, extra = {}) { if (Sheet.isOpen()) Sheet.close();
+  const al = TAB_ALIAS[tab]; if (al) { tab = al[0]; if (al[1] && !extra.scrollTo) extra = { ...extra, scrollTo: al[1] }; if (al[2]) extra = { calcTab: al[2], ...extra }; } ui.tab = tab; Object.assign(ui, extra); const target = ui.scrollTo; if (target && /^sec-/.test(target)) (ui.secOpen = ui.secOpen || {})[target] = true; render(); if (!target) window.scrollTo({ top: 0 }); }
 
 function render() {
   RATE_CACHE = null; CUST_CACHE = null;
@@ -1843,23 +1867,21 @@ function render() {
   const now = new Date(); $('#appSub').textContent = `${WEEKDAYS[now.getDay()]} ${now.getDate()} ${MONTHS[now.getMonth()]}`;
   const th = document.documentElement.getAttribute('data-theme') === 'dark';
   $('#btnTheme').innerHTML = ic(th ? 'sun' : 'moon');
-  $('#btnSettings').innerHTML = ic('sliders');
-  $('#btnCarrier').innerHTML = `<span class="${ui.syncing ? 'spin' : ''}" style="display:grid">${ic('refresh')}</span>`;
-  $('#btnCloud').innerHTML = `${ic('cloud')}<i class="dot ${ui.cloud}"></i>`;
+  updateCloudBadge();
   $('#fab').innerHTML = `${ic('plus', 22)}<span>إضافة</span>`;
-  $('#fab').classList.toggle('hide', ui.tab === 'settings' || ui.tab === 'calc');
+  $('#fab').classList.toggle('hide', ui.tab === 'settings' || ui.tab === 'products');
   const risk = S.entries.filter(Q.risk).length, rv = ui.review?.changes.length || 0;
   const navHTML = SIDE_TABS.map(([k, l, i]) => `<button class="tab" data-act="go" data-tab="${k}" ${ui.tab === k ? 'aria-current="page"' : ''}>
-    <span class="pill">${ic(i, 21)}</span><span>${l}</span>${k === 'orders' && risk ? `<em class="badge-n">${risk}</em>` : ''}${k === 'carrier' && rv ? `<em class="badge-n">${rv}</em>` : ''}</button>`).join('');
+    <span class="pill">${ic(i, 21)}</span><span>${l}</span>${k === 'orders' && risk ? `<em class="badge-n">${risk}</em>` : ''}${k === 'home' && rv ? `<em class="badge-n">${rv}</em>` : ''}</button>`).join('');
   const side = $('#sideNav'); if (side) side.innerHTML = navHTML;
   const ss = $('#sideStatus');
   if (ss) { const c = S.carrier, conf = Carrier.configured();
     const yl = !conf ? '' : ui.syncing ? 'busy' : c.lastError ? 'err' : 'ok';
-    ss.innerHTML = `<button class="stat" data-act="go" data-tab="carrier"><span class="lamp ${yl}"></span><span class="grow"><b>Yalidine</b>${!conf ? 'غير مربوط' : ui.syncing ? 'جارٍ التحديث…' : c.lastError ? 'فشل آخر تحديث' : 'آخر تحديث ' + timeAgo(c.lastSync)}</span></button>
-      <button class="stat" data-act="go" data-tab="settings" data-sub="cloud"><span class="lamp ${ui.cloud === 'ok' ? 'ok' : ui.cloud === 'err' ? 'err' : ui.cloud === 'busy' ? 'busy' : ''}"></span><span class="grow"><b>المزامنة بين الأجهزة</b>${ui.cloud === 'ok' ? 'مفعّلة' : ui.cloud === 'err' ? 'خطأ' : ui.cloud === 'busy' ? 'جارٍ الرفع…' : 'غير مفعّلة'}</span></button>`; }
+    ss.innerHTML = `<button class="stat" data-act="go" data-tab="settings" data-sub="yalidine"><span class="lamp ${yl}"></span><span class="grow"><b>Yalidine</b>${!conf ? 'غير مربوط' : ui.syncing ? 'جارٍ التحديث…' : c.lastError ? 'فشل آخر تحديث' : 'آخر تحديث ' + timeAgo(c.lastSync)}</span></button>
+      <button class="stat" data-act="go" data-tab="settings" data-sub="app"><span class="lamp ${ui.cloud === 'ok' ? 'ok' : ui.cloud === 'err' ? 'err' : ui.cloud === 'busy' ? 'busy' : ''}"></span><span class="grow"><b>المزامنة بين الأجهزة</b>${ui.cloud === 'ok' ? 'مفعّلة' : ui.cloud === 'err' ? 'خطأ' : ui.cloud === 'busy' ? 'جارٍ الرفع…' : 'غير مفعّلة'}</span></button>`; }
   const sb = $('#sideBrand'); if (sb) sb.textContent = t;
   $('#tabbar').innerHTML = TABS.map(([k, l, i]) => `<button class="tab" data-act="go" data-tab="${k}" ${ui.tab === k ? 'aria-current="page"' : ''}>
-    <span class="pill">${ic(i, 21)}</span><span>${l}</span>${k === 'orders' && risk ? `<em class="badge-n">${risk}</em>` : ''}${k === 'carrier' && rv ? `<em class="badge-n">${rv}</em>` : ''}</button>`).join('');
+    <span class="pill">${ic(i, 21)}</span><span>${l}</span>${k === 'orders' && risk ? `<em class="badge-n">${risk}</em>` : ''}${k === 'home' && rv ? `<em class="badge-n">${rv}</em>` : ''}</button>`).join('');
   $('#view').innerHTML = VIEWS[ui.tab]();
   if (ui.scrollTo) { const el = document.getElementById(ui.scrollTo); ui.scrollTo = null; el && el.scrollIntoView({ block: 'start' }); }
   AFTER[ui.tab] && AFTER[ui.tab]();
@@ -1868,39 +1890,23 @@ function render() {
 const PERIODS = [['today','اليوم'], ['7d','7 أيام'], ['month','هذا الشهر'], ['all','الكل']];
 function viewHome() {
   const r = periodRange(ui.period), inR = S.entries.filter(e => inRange(e, r)), st = computeStats(inR);
-  const adsShown = !S.settings.adsPaused || st.ads > 0;
-  const att = attentionItems();
-  const hasTrackedPending = S.entries.some(e => Q.pending(e) && cleanTrack(e.tracking));
-  const empty = !S.entries.length;
+  const att = attentionItems(), empty = !S.entries.length;
   const recent = S.entries.filter(isOrder).slice().sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, 5);
-  const allPend = S.entries.filter(Q.pending);
-  const pipe = [
-    ['s_prep', 'prep', allPend.filter(e => stageOf(e) === 'prep')],
-    ['s_transit', 'transit', allPend.filter(e => stageOf(e) === 'transit')],
-    ['s_out', 'out', allPend.filter(e => stageOf(e) === 'out' || stageOf(e) === 'risk')],
-    ['delivered', 'delivered', inR.filter(Q.delivered)],
-    ['returned', 'returned', inR.filter(Q.returned)]
-  ];
-  const minus = (lbl, v) => v ? `<i>−</i><span>${lbl} <b class="n">${fmtNum(v)}</b></span>` : '';
-  const decided = st.delivered.length + st.returned.length;
-  const hero = `
-  <section class="hero" aria-label="صافي الفائدة">
+  const costs = st.expenses + st.returnLoss + (!S.settings.adsPaused || st.ads > 0 ? st.ads : 0), decided = st.delivered.length + st.returned.length;
+  const hero = `<section class="hero" aria-label="صافي الفائدة">
     <div class="lbl">صافي فائدتي · ${r.label}</div>
     <div class="big ${st.net >= 0 ? '' : 'neg'}">${money(st.net)}</div>
-    <div class="eq"><span>محققة <b class="n">${fmtNum(st.deliveredProfit)}</b></span>${minus('مصاريف', st.expenses)}${minus('مرتجعات', st.returnLoss)}${adsShown ? minus('إعلانات', st.ads) : ''}</div>
+    <div class="eq"><span>محققة <b class="n">${fmtNum(st.deliveredProfit)}</b></span>${costs ? `<i>−</i><span>تكاليف <b class="n">${fmtNum(costs)}</b></span>` : ''}</div>
     <div class="mini"><span><b class="n">${st.orders.length}</b> طلبية</span>${decided ? `<span>تسليم <b class="n">${Math.round(st.deliveryRate)}%</b></span>` : ''}${st.delivered.length ? `<span><b class="n">${fmtNum(st.avg)}</b> دج / مُسلَّمة</span>` : ''}</div>
-    ${st.pending.length ? `<div class="pend">${ic('clock', 16)}<span>+ ${fmtNum(st.pendingProfit)} دج تنتظر التسليم (${st.pending.length} طلبية)</span></div>` : ''}
-  </section>
-  ${empty ? `<div class="card empty">${ic('box', 36)}<b>ابدأ بأول طلبية</b>اضغط «إضافة» أو «لصق من FreeVendor» لتسجّل طلبياتك وتعرف فائدتك قبل الإرسال.<div class="row" style="margin-top:14px;justify-content:center"><button class="btn" data-act="add">${ic('plus', 18)}<span>إضافة طلبية</span></button><button class="btn sec2" data-act="fv-paste">لصق من FreeVendor</button></div></div>` : ''}`;
-  const tasks = att.length ? `<div class="sec">مهامك الآن</div><div class="card list tasks">${att.map(a => `<button class="att" ${a.act ? `data-act="${a.act}"` : a.go ? `data-act="go" data-tab="${a.go}" data-sub="${a.sub}"` : `data-act="go" data-tab="orders" data-filter="${a.k}"`}><span class="ico ${a.tone}">${ic(a.icon)}</span><span class="grow"><b>${a.t}</b><span>${a.s}</span></span><span class="go">${ic('chev', 18)}</span></button>`).join('')}</div>`
-    : (empty ? '' : `<div class="sec">مهامك الآن</div><div class="card pad-s row" style="gap:12px"><span class="ico pos">${ic('check')}</span><div><b>لا شيء ينتظرك</b><div class="sub">كل الطلبيات تحت المتابعة.</div></div></div>`);
-  const pipeHTML = `<div class="sec">مسار الطلبيات</div>
-  <div class="pipe">${pipe.map(([f, k, list]) => { const u = STAGE_UI[k]; return `<button class="stg" style="--c:${u.c}" data-act="go" data-tab="orders" data-filter="${f}"><span class="k"><i></i>${u.label}</span><div class="v">${list.length}</div><div class="m">${list.length ? fmtNum(sum(list, e => e.amount)) + ' دج' : '—'}</div></button>`; }).join('')}</div>`;
-  const connect = !Carrier.configured() && hasTrackedPending ? `<button class="card att" style="margin-top:12px" data-act="go" data-tab="carrier"><span class="ico info">${ic('truck')}</span><span class="grow"><b>اربط Yalidine</b><span>لتتحدّث حالة طلبياتك وفائدتك الصافية تلقائياً</span></span><span class="go">${ic('chev', 18)}</span></button>` : '';
+    ${st.pending.length ? `<div class="pend">${ic('clock', 16)}<span>+ ${fmtNum(st.pendingProfit)} دج تنتظر التسليم</span></div>` : ''}
+  </section>`;
+  if (empty) return `${hero}<div class="card empty" style="margin-top:14px">${ic('box', 36)}<b>ابدأ بأول طلبية</b>اقرأ طلبياتك من FreeVendor بزر المفضلة (الإعدادات ← FreeVendor)، أو أضف طلبية يدوياً.<div class="row" style="margin-top:14px;justify-content:center"><button class="btn" data-act="go" data-tab="settings" data-sub="vonder">ربط FreeVendor</button><button class="btn sec2" data-act="add">${ic('plus', 18)}<span>إضافة</span></button></div></div>`;
+  const alerts = att.length ? `<div class="sec">تنبيهات</div><div class="card list tasks">${att.map(a => `<button class="att" ${a.act ? `data-act="${a.act}"` : a.go ? `data-act="go" data-tab="${a.go}" data-sub="${a.sub}"` : `data-act="go" data-tab="orders" data-filter="${a.k}"`}><span class="ico ${a.tone}">${ic(a.icon)}</span><span class="grow"><b>${a.t}</b><span>${a.s}</span></span><span class="go">${ic('chev', 18)}</span></button>`).join('')}</div>` : '';
   const recentHTML = recent.length ? `<div class="sec">آخر الطلبيات <button class="lnk" data-act="go" data-tab="orders" data-filter="all">عرض الكل</button></div><div class="card list">${recent.map(orderRow).join('')}</div>` : '';
   return `<div class="chips" role="group" aria-label="الفترة" style="margin-bottom:12px">${PERIODS.map(([k, l]) => `<button class="chip" data-act="period" data-v="${k}" aria-pressed="${ui.period === k}">${l}</button>`).join('')}</div>
-  <div class="home-grid"><div>${hero}</div><div>${tasks}</div></div>
-  ${empty ? '' : `<div class="home-full">${pipeHTML}</div>${connect}${recentHTML}`}`;
+  ${reviewHTML()}
+  <div class="home-grid"><div class="g-hero">${hero}</div><div class="g-flow">${flowHTML()}</div>${alerts ? `<div class="g-alerts">${alerts}</div>` : ''}</div>
+  ${recentHTML}`;
 }
 function weekChartHTML() {
   const week = [...Array(7)].map((_, i) => { const d = addDays(new Date(), i - 6), k = iso(d), day = S.entries.filter(e => e.date === k && isOrder(e));
@@ -1975,39 +1981,29 @@ function reviewHTML() {
     <div class="row pad-s" style="border-top:1px solid var(--line)"><button class="btn grow" data-act="rv-apply">${ic('check', 18)}<span>تطبيق المحدَّد</span></button><button class="btn sec2" data-act="rv-cancel">إلغاء</button></div></section>`;
 }
 
-function viewCarrier() {
+function yalidineSection() {
   const c = S.carrier, conf = Carrier.configured(), targets = syncTargets();
-  const noTrack = S.entries.filter(Q.notrack).length;
   const fmtLog = l => l.error ? `<span class="neg">${esc(l.error)}</span>` : `فحص ${l.checked}${l.delivered ? ` • تسليم ${l.delivered}` : ''}${l.returned ? ` • مرتجع ${l.returned}` : ''}${l.netFixed ? ` • Net ${l.netFixed}` : ''}${l.pending ? ` • بانتظارك ${l.pending}` : ''}${l.missing ? ` • غير موجودة ${l.missing}` : ''}`;
-  return `<div class="stack">
-  <section class="card pad">
-    <div class="row"><span class="ico ${conf ? 'pos' : 'info'}">${ic('truck')}</span><div class="grow"><b style="font-size:16px">${conf ? 'Yalidine مربوط' : 'اربط Yalidine'}</b>
-      <div class="sub">${conf && c.lastError ? `<span style="color:var(--neg,#d33)">⚠ فشل آخر تحديث: ${esc(c.lastError)}</span>` : conf ? `آخر تحديث: ${timeAgo(c.lastSync)} • ${targets.length} طلبية تحت المتابعة` : 'حالة الطلبية، التسليم، المرتجع وفائدتك الصافية — تُحدَّث وحدها.'}</div></div></div>
-    ${conf ? `<button class="btn block" style="margin-top:14px" data-act="carrier-sync" ${ui.syncing ? 'disabled' : ''}><span class="${ui.syncing ? 'spin' : ''}" style="display:grid">${ic('refresh', 18)}</span><span>${ui.syncing ? 'جارٍ التحديث…' : 'حدّث الآن'}</span></button>
-      ${noTrack ? `<div class="note warn" style="margin-top:12px">${ic('alert', 18)}<div>${noTrack} طلبية معلّقة بلا رقم تتبع — <button class="lnk" style="color:var(--brand);font-weight:700" data-act="go" data-tab="orders" data-filter="notrack">أضف الأرقام</button> لتُتابَع تلقائياً.</div></div>` : ''}`
-    : `<ol style="margin:14px 18px 0;line-height:1.9;color:var(--ink-2);font-size:14px"><li>من حسابك في Yalidine افتح صفحة الـAPI وأنشئ مفتاحاً (API ID + Token).</li><li>الصقهما أدناه واضغط «اختبار الاتصال».</li><li>أضف رقم التتبع لكل طلبية — وسيتكفّل التطبيق بالباقي.</li></ol>`}
-  </section>
-  ${conf ? `<section class="card pad"><div class="row"><span class="ico info">${ic('upload', 20)}</span><div class="grow"><b>رفع طلبيات FreeVendor إلى Yalidine</b><div class="sub">${readyToPush().length ? readyToPush().length + ' طلبية مؤكدة جاهزة للرفع' : 'لا توجد طلبيات جاهزة — استورد من FreeVendor أولاً (الإعدادات ← استيراد طلبيات FreeVendor)'}</div></div></div><button class="btn block" style="margin-top:12px" data-act="push-open">رفع إلى Yalidine…</button><div class="row" style="margin-top:8px"><button class="btn sec2 grow" data-act="fv-paste">${ic('download', 18)}<span>لصق من FreeVendor</span></button><button class="btn sec2 grow" data-act="labels-open">${ic('box', 18)}<span>الملصقات${labelQueue().length ? ` (${labelQueue().length})` : ''}</span></button><button class="btn ghost" data-act="go" data-tab="settings" data-sub="vonder">الإعداد</button></div></section>` : ''}
-  ${reviewHTML()}
-  <details class="acc" id="setupAcc" ${!conf || ui.openSetup ? 'open' : ''}><summary>${ic('key', 20)}بيانات الربط</summary><div class="inner">
+  const hint = !conf ? 'غير مربوط' : c.lastError ? '⚠ فشل آخر تحديث' : `آخر تحديث ${timeAgo(c.lastSync)} • ${targets.length} تحت المتابعة`;
+  return setSec('sec-yalidine', 'truck', 'Yalidine', hint, `
+    ${conf ? `<div class="note ${c.lastError ? 'bad' : 'good'}" style="margin-bottom:12px">${ic(c.lastError ? 'alert' : 'check', 18)}<div>${c.lastError ? `فشل آخر تحديث: ${esc(c.lastError)}` : `مربوط • ${targets.length} طلبية تحت المتابعة • آخر تحديث ${timeAgo(c.lastSync)}`}</div></div>
+      <button class="btn block" style="margin-bottom:12px" data-act="carrier-sync" ${ui.syncing ? 'disabled' : ''}><span class="${ui.syncing ? 'spin' : ''}" style="display:grid">${ic('refresh', 18)}</span><span>${ui.syncing ? 'جارٍ التحديث…' : 'حدّث الآن'}</span></button>`
+    : `<ol class="sub" style="margin:0 0 12px;padding-inline-start:18px;line-height:1.9"><li>من حسابك في Yalidine افتح صفحة الـAPI وأنشئ مفتاحاً (API ID + Token).</li><li>الصقهما هنا واضغط «اختبار الاتصال».</li><li>بعدها تتحدّث الحالات والفائدة الصافية وحدها، وتُنشأ الطرود من كناش.</li></ol>`}
     <label class="field"><span>API ID</span><input type="text" class="ltr" autocomplete="off" data-bind="carrier.apiId" value="${esc(c.apiId)}" placeholder="مثال: 1234567890"></label>
     <label class="field"><span>API Token</span><input type="password" class="ltr" autocomplete="off" data-bind="carrier.apiToken" value="${esc(c.apiToken)}" placeholder="الرمز السرّي"><small>يُحفظ على هذا الجهاز فقط ولا يدخل في المزامنة السحابية ولا في النسخ الاحتياطي.</small></label>
     <label class="field"><span>رابط وسيط (اختياري)</span><input type="url" class="ltr" autocomplete="off" data-bind="carrier.proxy" value="${esc(c.proxy)}" placeholder="https://…workers.dev"><small>يلزم فقط إذا منع المتصفح الاتصال المباشر (خطأ CORS). أدخل رابط الـWorker الخاص بك فقط بدون /wilayas/.</small></label>
     <div class="row"><button class="btn sec2 grow" data-act="carrier-test">اختبار الاتصال</button>${conf ? '<button class="btn danger-o" data-act="carrier-disconnect">فصل</button>' : ''}</div>
-    ${conf ? `<hr class="sep"><label class="field"><span>تشخيص: فحص رقم تتبع واحد مباشرة</span><div class="row"><input type="text" class="ltr grow" id="probeTrack" placeholder="yal-XD79UM"><button class="btn sec2" data-act="carrier-probe">فحص</button></div><small>يورّيك الطلب والرد الحقيقي بلا أي تخمين — استعملها إذا طلبية ما تتزامنش.</small></label>` : ''}
-  </div></details>
-  <section class="card pad-s"><div class="sw"><div class="tx"><b>تطبيق التسليم والمرتجع تلقائياً</b><span>عند إيقافه تراجع كل تحديث قبل تطبيقه</span></div><label class="toggle"><input type="checkbox" data-bind="carrier.auto" ${c.auto ? 'checked' : ''} aria-label="تطبيق تلقائي"><i></i></label></div>
-    <div class="sw"><div class="tx"><b>تحديث دوري أثناء فتح التطبيق</b></div><select style="width:130px" data-bind="carrier.interval" data-num data-render>${[[0, 'يدوي فقط'], [15, 'كل 15 د'], [30, 'كل 30 د'], [60, 'كل ساعة'], [180, 'كل 3 ساعات']].map(([v, l]) => `<option value="${v}" ${num(c.interval) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div></section>
-  <section class="card pad"><b>كيف تُحسب فائدتك الصافية؟</b>
-    <div class="note" style="margin-top:10px">${ic('info', 18)}<div>الفائدة = <b>Net Client − التكلفة − فائدة البائع</b>. عندما لا يوفّر Yalidine قيمة Net جاهزة، يحسبها التطبيق: <b>المبلغ المحصَّل − رسوم توصيل Yalidine − ${fmtNum(num(S.settings.codPct) * 100) / 100}% عمولة التحصيل − خصم إضافي</b> ويعلّمها «تقديرية». ملف Excel من Yalidine يستبدلها بالقيمة الحقيقية.</div></div>
+    <div class="sw"><div class="tx"><b>تطبيق التسليم والمرتجع تلقائياً</b><span>عند إيقافه تراجع كل تحديث قبل تطبيقه</span></div><label class="toggle"><input type="checkbox" data-bind="carrier.auto" ${c.auto ? 'checked' : ''} aria-label="تطبيق تلقائي"><i></i></label></div>
+    <div class="sw"><div class="tx"><b>تحديث دوري أثناء فتح التطبيق</b></div><select style="width:130px" data-bind="carrier.interval" data-num data-render>${[[0, 'يدوي فقط'], [15, 'كل 15 د'], [30, 'كل 30 د'], [60, 'كل ساعة'], [180, 'كل 3 ساعات']].map(([v, l]) => `<option value="${v}" ${num(c.interval) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    <label class="btn sec2 block" style="margin-top:10px" for="yalFile">${ic('upload', 18)}<span>ملف Excel من Yalidine (Net الحقيقي)</span></label><input id="yalFile" type="file" accept=".xlsx,.xls" hidden>
+    <details class="acc" style="box-shadow:none;margin-top:10px"><summary style="padding:12px 14px;font-size:14px">${ic('calc', 18)}حساب Net والسجل</summary><div class="inner">
+      <div class="sub" style="margin-bottom:8px">الفائدة = Net Client − التكلفة − فائدة البائع. إن لم يعطِ Yalidine قيمة Net، يحسبها كناش: المبلغ المحصَّل − رسوم التوصيل − ${fmtNum(num(S.settings.codPct) * 100) / 100}% عمولة التحصيل، ويعلّمها «تقديرية» حتى يصل ملف Excel.</div>
     <div class="field" style="margin-top:12px"><span>طريقة حساب Net من الـAPI</span><select data-bind="carrier.netMode" data-render><option value="est" ${c.netMode === 'est' ? 'selected' : ''}>تقدير تلقائي من مبلغ الطرد</option><option value="none" ${c.netMode === 'none' ? 'selected' : ''}>لا تحسب — انتظر ملف Excel</option></select></div>
     <div class="two"><label class="field"><span>خصم ثابت إضافي (دج)</span><input type="number" inputmode="decimal" data-bind="carrier.extraFixed" data-num value="${num(c.extraFixed)}"></label>
     <label class="field"><span>خصم نسبة (%)</span><input type="number" inputmode="decimal" step="0.1" data-bind="carrier.extraPct" data-num value="${num(c.extraPct)}"></label></div>
-    <small class="muted">لا تضبطه يدوياً: بعد 3 طلبيات مؤكدة تقترح <button class="lnk" data-act="go" data-tab="settings" data-sub="fees">المعايرة التلقائية</button> القيمة الصحيحة.</small></section>
-  <section class="card pad"><b>ملف Excel من Yalidine</b><div class="sub" style="margin:4px 0 12px">للحصول على Net الحقيقي أو إذا لم تربط الـAPI.</div>
-    <label class="btn sec2 block" for="yalFile">${ic('upload', 18)}<span>اختيار ملف Excel</span></label><input id="yalFile" type="file" accept=".xlsx,.xls" hidden></section>
-  ${c.log?.length ? `<div class="sec">سجل التحديثات ${c.undo ? `<button class="lnk" data-act="carrier-undo">${'تراجع عن آخر تحديث'}</button>` : ''}</div><div class="card list">${c.log.slice(0, 8).map(l => `<div class="pad-s"><div class="sub">${new Date(l.ts).toLocaleString('ar-DZ', { dateStyle:'short', timeStyle:'short' })}${l.manual === false ? ' • تلقائي' : ''}</div><div style="font-size:13.5px">${fmtLog(l)}</div></div>`).join('')}</div>` : ''}
-  </div>`;
+      ${conf ? `<hr class="sep"><label class="field"><span>فحص رقم تتبع واحد</span><div class="row"><input type="text" class="ltr grow" id="probeTrack" placeholder="yal-XD79UM"><button class="btn sec2" data-act="carrier-probe">فحص</button></div><small>يعرض الطلب والرد الحقيقي — استعمله إذا لم تتزامن طلبية.</small></label>` : ''}
+      ${c.log?.length ? `<div class="sub" style="margin:12px 0 6px;display:flex;justify-content:space-between"><b>سجل التحديثات</b> ${c.undo ? `<button class="lnk" data-act="carrier-undo">${'تراجع عن آخر تحديث'}</button>` : ''}</div><div class="card list">${c.log.slice(0, 8).map(l => `<div class="pad-s"><div class="sub">${new Date(l.ts).toLocaleString('ar-DZ', { dateStyle:'short', timeStyle:'short' })}${l.manual === false ? ' • تلقائي' : ''}</div><div style="font-size:13.5px">${fmtLog(l)}</div></div>`).join('')}</div>` : ''}
+    </div></details>`);
 }
 
 /* =====================================================================
@@ -2018,7 +2014,7 @@ function calcState() {
   if (ui.calc) return ui.calc;
   const lv = S.entries.find(e => e.type === 'vonder'), s = S.settings;
   const saved = readJSON('kanach_calc', null);
-  ui.calc = { mode: 'fwd', price: lv?.productPrice || s.defPrice, qty: 1, myProfit: lv?.myProfit || s.defProfit, seller: lv ? (lv.sellerProfit ?? s.defSeller) : s.defSeller,
+  ui.calc = { mode: 'fwd', price: Math.round(lv?.productPrice || s.defPrice), qty: 1, myProfit: Math.round(lv?.myProfit || s.defProfit), seller: lv ? (lv.sellerProfit ?? s.defSeller) : s.defSeller,
     extra: 0, wid: '', type: s.defShip, sell: lv?.sellPrice ? Math.round(lv.sellPrice) : '', target: lv?.myProfit || s.defProfit, ...(saved || {}) };
   return ui.calc;
 }
@@ -2088,8 +2084,9 @@ function wilayaTableHTML() {
   </tbody></table></div>`;
 }
 function viewCalc() {
-  const tabs = `<div class="seg" role="tablist" style="margin-bottom:6px">${[['calc', 'الحاسبة'], ['products', `منتجاتي (${myProductsList().length})`]].map(([k, l]) => `<button role="tab" data-act="calc-tab" data-v="${k}" aria-pressed="${(ui.calcTab || 'calc') === k}">${l}</button>`).join('')}</div>`;
-  return tabs + (ui.calcTab === 'products' ? viewMyProducts() : viewCalcInner());
+  const t = ['products', 'perf', 'calc'].includes(ui.calcTab) ? ui.calcTab : 'products';
+  const tabs = `<div class="seg" role="tablist" style="margin-bottom:6px">${[['products', `منتجاتي (${myProductsList().length})`], ['perf', 'المبيعات'], ['calc', 'حاسبة السعر']].map(([k, l]) => `<button role="tab" data-act="calc-tab" data-v="${k}" aria-pressed="${t === k}">${l}</button>`).join('')}</div>`;
+  return tabs + (t === 'products' ? viewMyProducts() : t === 'perf' ? viewProducts() : viewCalcInner());
 }
 function viewCalcInner() {
   const c = calcState(), f = (label, key, hint = '') => `<label class="field"><span>${label}</span><input type="number" inputmode="decimal" step="any" data-c="${key}" value="${esc(c[key])}">${hint ? `<small>${hint}</small>` : ''}</label>`;
@@ -2629,17 +2626,6 @@ function viewCustomers() {
   <div class="note" style="margin-top:12px">${ic('info', 18)}<div>VIP: 3 طلبيات ناجحة فأكثر بلا مرتجع • سيّئ: مرتجع واحد فأكثر • محظور: 3 مرتجعات فأكثر.</div></div>
   <button class="btn sec2 block" style="margin-top:12px" data-act="export-crm">${ic('download', 18)}<span>تصدير العملاء (Excel)</span></button>`;
 }
-function viewBudget() {
-  const m = ui.budgetMonth, budget = num(S.budgets[m]), items = S.budgetExp.filter(x => x.month === m), spent = sum(items, x => x.amount), left = budget - spent, pct = budget > 0 ? Math.min(100, spent / budget * 100) : 0;
-  return `<div class="stack"><div class="note">${ic('info', 18)}<div>حدّد ميزانية الشهر (مثلاً أجرتك)، وسجّل ما تسحبه منها لترى كم بقي.</div></div>
-  <div class="card pad"><div class="two"><label class="field"><span>الشهر</span><input type="month" id="budMonth" value="${m}"></label><label class="field"><span>الميزانية (دج)</span><input type="number" inputmode="decimal" id="budAmount" value="${budget || ''}" placeholder="75000"></label></div>
-    <div class="row" style="justify-content:space-between;font-weight:600;font-size:14px;margin:4px 0 8px"><span class="neg">صُرف ${money(spent)}</span><span class="${left < 0 ? 'neg' : 'pos'}">متبقّي ${money(left)}</span></div>
-    <div class="progress" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100"><i class="${pct >= 100 ? 'over' : pct >= 80 ? 'hot' : ''}" style="width:${pct}%"></i></div>
-    ${budget > 0 ? `<div class="sub" style="margin-top:8px;text-align:center">${pct >= 100 ? 'تجاوزت الميزانية' : pct >= 80 ? 'اقتربت من نهاية الميزانية' : `استهلكت ${Math.round(pct)}%`}</div>` : ''}</div>
-  <div class="card pad"><b>سحب من الميزانية</b><div style="margin-top:10px"><label class="field"><span>السبب</span><input type="text" id="budDesc" placeholder="كراء، فواتير، مشتريات…"></label>
-    <label class="field"><span>المبلغ (دج)</span><input type="number" inputmode="decimal" id="budExp"></label><button class="btn block" data-act="budget-add">تسجيل السحب</button></div></div>
-  ${items.length ? `<div class="card list">${items.slice().reverse().map(x => `<div class="pad-s row"><div class="grow"><b>${esc(x.desc)}</b><div class="sub">${fmtDate(x.date)}</div></div><b class="neg">${money(x.amount)}</b><button class="iconbtn" data-act="budget-del" data-id="${esc(x.id)}" aria-label="حذف">${ic('trash', 18)}</button></div>`).join('')}</div>` : ''}</div>`;
-}
 function viewAds() {
   const range = periodRange(ui.rPeriod), st = computeStats(S.entries.filter(e => inRange(e, range)));
   const cpa = st.delivered.length ? st.ads / st.delivered.length : 0, roas = st.ads > 0 ? st.deliveredProfit / st.ads : 0;
@@ -2649,17 +2635,10 @@ function viewAds() {
   <div class="card kpi"><div class="t">تكلفة الطلبية (CPA)</div><div class="v">${money(cpa)}</div></div><div class="card kpi"><div class="t">العائد (ROAS)</div><div class="v">${roas ? roas.toFixed(1) + '×' : '—'}</div></div></div>
   <div class="note" style="margin-top:12px">${ic('info', 18)}<div>${msg}<br><span class="muted">ROAS = الفائدة المحققة ÷ الإنفاق الإعلاني.</span></div></div>`;
 }
-function viewAssistant() {
-  const has = !!localStorage.getItem(LS.apiKey);
-  return `<div class="stack">${!has ? `<div class="note warn">${ic('key', 18)}<div>لتفعيل المحادثة أضف مفتاح Claude API من <button class="lnk" style="color:var(--brand);font-weight:700" data-act="go" data-tab="settings" data-sub="assistant">الإعدادات</button>.</div></div>` : ''}
-  <div class="chips">${['كيف كان أداء هذا الشهر؟', 'أي ولاية فيها مرتجعات كثيرة؟', 'كيف أرفع فائدتي؟'].map(q => `<button class="chip" data-act="chat-q" data-q="${esc(q)}">${q}</button>`).join('')}</div>
-  <div class="card pad-s"><div class="chat" id="chatBox">${ui.chat.length ? ui.chat.map(m => `<div class="msg ${m.r}">${esc(m.t)}</div>`).join('') : '<div class="sub" style="padding:8px">اسأل بالدارجة عن أرقامك وسأحلّلها.</div>'}</div>
-    <div class="row" style="margin-top:10px"><input type="text" id="chatIn" placeholder="اكتب سؤالك…" class="grow"><button class="btn" data-act="chat-send" aria-label="إرسال">${ic('chev', 18)}</button></div></div></div>`;
-}
-const R_TABS = () => [['summary', 'الملخص'], ['settle', 'التسديد'], ['products', 'المنتجات'], ['wilayas', 'الولايات'], ['customers', 'العملاء'], ['budget', 'الميزانية'], ...(S.settings.adsPaused ? [] : [['ads', 'الإعلانات']]), ['assistant', 'المساعد']];
+const R_TABS = () => [['summary', 'الملخص'], ['settle', 'التسديد'], ['wilayas', 'الولايات'], ['customers', 'العملاء'], ...(S.settings.adsPaused ? [] : [['ads', 'الإعلانات']])];
 function viewReports() {
   if (!R_TABS().some(([k]) => k === ui.rTab)) ui.rTab = 'summary';
-  const body = { summary: viewSummary, settle: viewSettle, products: viewProducts, wilayas: viewWilayas, customers: viewCustomers, budget: viewBudget, ads: viewAds, assistant: viewAssistant }[ui.rTab]();
+  const body = { summary: viewSummary, settle: viewSettle, wilayas: viewWilayas, customers: viewCustomers, ads: viewAds }[ui.rTab]();
   return `<div class="seg" role="tablist">${R_TABS().map(([k, l]) => `<button role="tab" data-act="r-tab" data-v="${k}" aria-pressed="${ui.rTab === k}">${l}</button>`).join('')}</div>${body}`;
 }
 
@@ -2673,7 +2652,7 @@ function feesSection() {
       ? `<div class="note good">${ic('check', 18)}<div>تحقّقتُ من <b>${cal.n}</b> طلبية مؤكدة: Net الحقيقي يطابق هذا الحساب (فرق وسيط ${moneyT(cal.res)}).</div></div>`
       : `<div class="note warn">${ic('alert', 18)}<div>في <b>${cal.n}</b> طلبية مؤكدة، Net الحقيقي ${cal.res < 0 ? 'أقل' : 'أكثر'} من المحسوب بـ <b>${moneyT(Math.abs(cal.res))}</b> في المتوسط${cal.res < 0 ? ' — قد يقتطع Yalidine شيئاً آخر (تأمين، وزن زائد…)' : ' — ربما سعر توصيل FreeVendor عندك أعلى من الجدول'}.
         ${cal.res < 0 ? `<div style="margin-top:8px"><button class="btn sm" data-act="fee-extra" data-v="${-cal.res}">احسب ${moneyT(-cal.res)} خصماً إضافياً لكل طلبية</button></div>` : ''}</div></div>`;
-  return setSec('sec-fees', 'calc', 'الحاسبة ورسوم التوصيل', `عمولة ${fmtNum(num(s.codPct) * 100) / 100}% • Vonder ${fmtNum(num(s.appFeePct))}% • ${cal.verdict === 'ok' ? 'مطابق لبياناتك ✓' : 'أسعار FreeVendor وYalidine'}`, `
+  return setSec('sec-fees', 'calc', 'العمولات ورسوم التوصيل', `عمولة ${fmtNum(num(s.codPct) * 100) / 100}% • Vonder ${fmtNum(num(s.appFeePct))}% • ${cal.verdict === 'ok' ? 'مطابق لبياناتك ✓' : 'أسعار FreeVendor وYalidine'}`, `
     <div class="note" style="margin:0 0 12px">${ic('info', 18)}<div>الزبون يدفع <b>سعر توصيل FreeVendor</b> فوق سعر الزبون، وYalidine يقتطع <b>سعره هو</b> + <b>${fmtNum(num(s.codPct) * 100) / 100}%</b> من المبلغ المحصَّل عند كل تسليم ناجح. الفرق يُخصم من فائدتك.<br>
       مثال أدرار منزل: ${fmtNum(ex.yal)} − ${fmtNum(ex.fv)} + ${fmtNum(ex.cod)} = <b>${moneyT(ex.cost)}</b> عليك.</div></div>
     ${mig && mig.n && !mig.hidden ? `<div class="note ${mig.delta >= 0 ? 'good' : 'warn'}" style="margin-bottom:12px">${ic('calc', 18)}<div>صُحِّحت فائدة <b>${mig.n}</b> طلبية بالحساب الحقيقي: مجموع فائدتها ${mig.delta >= 0 ? 'زاد' : 'نقص'} بـ <b>${moneyT(Math.abs(mig.delta))}</b>${mig.hadBuffer ? '، وأُلغيت «الحماية 400» التقريبية' : ''}.
@@ -2692,72 +2671,79 @@ function feesSection() {
 function setSec(id, icon, title, hint, inner) {
   return `<details class="acc set" id="${id}" ${ui.secOpen?.[id] ? 'open' : ''}><summary><span class="ico info">${ic(icon, 18)}</span><span class="grow"><b>${title}</b>${hint ? `<small>${hint}</small>` : ''}</span></summary><div class="inner">${inner}</div></details>`;
 }
-function viewSettings() {
-  const s = S.settings, jb = !!localStorage.getItem(LS.jbKey), hasKey = !!localStorage.getItem(LS.apiKey);
-  const num_ = (k, l) => `<label class="field"><span>${l}</span><input type="number" inputmode="decimal" data-bind="settings.${k}" data-num value="${num(s[k])}"></label>`;
-  return `<div class="stack">
-  ${appSection()}
-  ${confirmSection()}
-  ${setSec('sec-general', 'sliders', 'عام والقيم الافتراضية', `${esc(s.appName)} • فائدتي ${fmtNum(num(s.defProfit))} • Taxe ${fmtNum(num(s.defTaxe))}`, `<div><label class="field"><span>اسم التطبيق</span><input type="text" data-bind="settings.appName" data-title value="${esc(s.appName)}" maxlength="30"></label></div>
-    <div class="sw" style="padding-top:0"><div class="tx"><b>الإعلانات موقوفة مؤقتاً</b><span>يخفي كل ما يخص الإعلانات (بطاقات، تحليل، نوع الحركة). الأرقام السابقة تبقى محسوبة.</span></div><label class="toggle"><input type="checkbox" data-bind="settings.adsPaused" data-render ${s.adsPaused ? 'checked' : ''} aria-label="إيقاف الإعلانات"><i></i></label></div><hr class="sep"><div class="sub" style="margin:2px 0 12px">تُستعمل عند أول طلبية؛ بعدها يقترح التطبيق قيم آخر طلبية.</div>
-    <div class="two">${num_('defPrice', 'سعر المنتج')}${num_('defProfit', 'فائدتي / قطعة')}</div><div class="two">${num_('defSeller', 'فائدة البائع')}${num_('defTaxe', 'Taxe retour')}</div>`)}
-  ${feesSection()}
-  ${setSec('sec-vonder', 'upload', 'من FreeVendor إلى Yalidine', `${s.autoPush ? 'رفع تلقائي مفعّل' : 'رفع يدوي'} • ${Object.keys(S.catalog).length} منتج بسعر شراء`, `
-    <div class="sub" style="margin:2px 0 10px">FreeVendor بلا API، فيقرأ كناش صفحة الطلبيات من متصفحك وأنت مسجّل الدخول، ثم يُنشئ الطرود عند Yalidine بالـAPI.</div>
-    <ol class="sub" style="margin:0 0 10px;padding-inline-start:18px;line-height:1.9"><li>شغّل الوسيط على حاسوبك: <code class="n">node kanach-proxy.js</code> وافتح كناش من <span class="n">http://localhost:8787</span></li>
-      <li>اسحب الزر التالي إلى شريط المفضلة (مرة واحدة)</li><li>في freevendor.space افتح «Gérer les commandes» واضغط الزر: تُقرأ الطلبيات «Confirmé avec le client» وتصل هنا وحدها خلال ثوانٍ</li></ol>
+function vonderSection() {
+  const s = S.settings, auto = kanachCloud() || KANACH_PROXY;
+  return setSec('sec-vonder', 'upload', 'FreeVendor', `${s.autoPush ? 'رفع تلقائي إلى Yalidine' : 'رفع يدوي'} • ${auto ? 'تصل الطلبيات وحدها' : 'لصق يدوي'}`, `
+    <div class="sub" style="margin:2px 0 10px">FreeVendor بلا API، فيقرأ كناش طلبياتك من متصفحك وأنت مسجّل الدخول: المؤكدة، والتي تنتظر تأكيد الزبون.</div>
+    <ol class="sub" style="margin:0 0 10px;padding-inline-start:18px;line-height:1.9"><li>اسحب هذا الزر إلى شريط المفضلة (مرة واحدة).</li><li>في FreeVendor افتح «Gérer les commandes» واضغط الزر.</li></ol>
     <div class="row wrap-r" style="margin:0 0 12px"><a class="btn" id="vonderBm" href="#" draggable="true" style="display:inline-flex" onclick="event.preventDefault();toast('اسحب الزر إلى شريط المفضلة، لا تضغط عليه هنا.')">⇪ كناش ← FreeVendor</a>
-      <span class="badge ${KANACH_PROXY ? 'pos' : 'info'}">${KANACH_PROXY ? 'تصل الطلبيات وحدها (الوسيط المحلي)' : kanachApp() ? 'عبر زر «افتح كناش وأرسل»' : 'عبر زر «نسخ» ثم «لصق من FreeVendor»'}</span></div>
-    <div class="row wrap-r" style="margin-bottom:10px"><button class="btn sec2 grow" data-act="fv-paste">${ic('download', 18)}<span>لصق من FreeVendor</span></button><button class="btn sec2 grow" data-act="copy-bm">${ic('copy', 18)}<span>نسخ كود الزر (للهاتف)</span></button></div>
-    <div class="sub" style="margin:-4px 0 10px">على الهاتف: أضف أي صفحة إلى المفضلة، عدّل اسمها إلى «كناش» والصق الكود مكان الرابط. في FreeVendor اكتب «كناش» في شريط العنوان واضغط على المفضلة.</div>
+      <span class="badge ${auto ? 'pos' : 'info'}">${kanachCloud() ? 'تصل وحدها إلى كناش السحابي' : KANACH_PROXY ? 'تصل وحدها (الوسيط المحلي)' : kanachApp() ? 'عبر «افتح كناش وأرسل»' : 'عبر «نسخ» ثم «لصق من FreeVendor»'}</span></div>
+    <div class="row wrap-r" style="margin-bottom:10px">${auto ? '' : `<button class="btn sec2 grow" data-act="fv-paste">${ic('download', 18)}<span>لصق من FreeVendor</span></button>`}<button class="btn sec2 grow" data-act="copy-bm">${ic('copy', 18)}<span>نسخ كود الزر (للهاتف)</span></button></div>
+    <div class="sub" style="margin:-4px 0 10px">على الهاتف: أضف أي صفحة إلى المفضلة، سمّها «كناش» والصق الكود مكان الرابط. في FreeVendor اكتب «كناش» في شريط العنوان واختر المفضلة.</div>
     <div class="sw"><div class="tx"><b>رفع تلقائي إلى Yalidine</b><span>تُنشأ الطرود فور وصول الطلبيات — فقط ما طابقت ولايته وبلديته (أو مكتبه) بثقة كاملة وهاتفه صالح وزبونه بلا سوابق. الباقي ينتظر مراجعتك.</span></div><label class="toggle"><input type="checkbox" data-bind="settings.autoPush" data-render ${s.autoPush ? 'checked' : ''} aria-label="رفع تلقائي"><i></i></label></div>
     <div class="sw"><div class="tx"><b>Livraison gratuite عند Yalidine</b><span>«Prix de vente» من FreeVendor يشمل التوصيل، فيدفع الزبون المبلغ نفسه ويقتطع Yalidine رسومه منه. أوقفه فقط إن كنت تريد أن يضيف Yalidine سعره فوق المبلغ.</span></div><label class="toggle"><input type="checkbox" data-bind="settings.fvFreeShipping" ${s.fvFreeShipping !== false ? 'checked' : ''} aria-label="Livraison gratuite"><i></i></label></div>
     <div class="two" style="margin-top:10px"><label class="field"><span>الوزن الافتراضي (كغ)</span><input type="number" inputmode="decimal" step="0.1" data-bind="settings.defWeight" data-num value="${num(s.defWeight)}"><small>يُستعمل إن لم يُحدَّد وزن المنتج.</small></label>
-      <div class="field"><span>أسعار الشراء</span><button class="btn sec2 block" data-act="catalog-open">${ic('box', 18)}<span>${Object.keys(S.catalog).length} منتج — تعديل</span></button></div></div>
+      <div class="field"><span>أسعار الشراء</span><button class="btn sec2 block" data-act="go" data-tab="products" data-sub="products">${ic('box', 18)}<span>منتجاتي (${myProductsList().length})</span></button></div></div>
     <details class="acc" style="box-shadow:none;margin-top:4px"><summary style="padding:12px 14px;font-size:14px">${ic('copy', 18)}بدون وسيط: لصق يدوي</summary><div class="inner">
       <label class="field"><span>الصق النص الذي نسخه الزر</span><textarea id="vonderPaste" class="ltr" rows="3" placeholder='{"kanach":"vonder",...}'></textarea></label>
-      <button class="btn block" data-act="vonder-import">استيراد الطلبيات</button></div></details>`)}
+      <button class="btn block" data-act="vonder-import">استيراد الطلبيات</button></div></details>`);
+}
+function viewSettings() {
+  const s = S.settings, jb = !!localStorage.getItem(LS.jbKey);
+  const num_ = (k, l, h = '') => `<label class="field"><span>${l}</span><input type="number" inputmode="decimal" data-bind="settings.${k}" data-num value="${num(s[k]) || ''}">${h ? `<small>${h}</small>` : ''}</label>`;
+  const grp = (t, first) => `<div class="sec" style="margin:${first ? '2px' : '22px'} 4px 2px">${t}</div>`;
+  return `<div class="stack">
+  ${grp('الربط', true)}
+  ${appSection()}
+  ${yalidineSection()}
+  ${vonderSection()}
+  ${confirmSection()}
+  ${grp('الحساب والطباعة')}
+  ${feesSection()}
+  ${setSec('sec-general', 'sliders', 'القيم الافتراضية والأهداف', `فائدتي ${fmtNum(num(s.defProfit))} • Taxe ${fmtNum(num(s.defTaxe))}${num(s.monthGoal) ? ' • هدف ' + moneyT(num(s.monthGoal)) : ''}`, `
+    <label class="field"><span>اسم المتجر في التطبيق</span><input type="text" data-bind="settings.appName" data-title value="${esc(s.appName)}" maxlength="30"></label>
+    <div class="sub" style="margin:2px 0 10px">قيم أول طلبية تُدخلها يدوياً؛ بعدها يقترح كناش قيم آخر طلبية.</div>
+    <div class="two">${num_('defPrice', 'سعر المنتج')}${num_('defProfit', 'فائدتي / قطعة')}</div><div class="two">${num_('defSeller', 'فائدة البائع')}${num_('defTaxe', 'Taxe retour')}</div>
+    <hr class="sep">    <div class="two"><label class="field"><span>الهدف الصافي للشهر (دج)</span><input type="number" inputmode="decimal" data-bind="settings.monthGoal" data-num value="${num(s.monthGoal) || ''}" placeholder="100000"></label>
+    <label class="field"><span>ربح مستهدف لكل طرد مُرسَل (دج)</span><input type="number" inputmode="decimal" data-bind="settings.targetEV" data-num value="${num(s.targetEV)}"><small>يُستعمل لتقييم المنتجات واقتراح الأسعار.</small></label></div>    <div class="sw" style="padding-top:0"><div class="tx"><b>الإعلانات موقوفة مؤقتاً</b><span>يخفي كل ما يخص الإعلانات (بطاقات، تحليل، نوع الحركة). الأرقام السابقة تبقى محسوبة.</span></div><label class="toggle"><input type="checkbox" data-bind="settings.adsPaused" data-render ${s.adsPaused ? 'checked' : ''} aria-label="إيقاف الإعلانات"><i></i></label></div>`)}
   ${setSec('sec-labels', 'box', 'ملصقات الشحن', s.labelFormat === 'a4' ? 'A4 — 4 ملصقات في الورقة' : 'طابعة حرارية 10×15 سم', `
     <div class="field"><span>حجم الطباعة</span><div class="seg" style="padding:0">${[['thermal', '10×15 سم (حرارية)'], ['a4', 'A4 — 4 في الورقة']].map(([k, l]) => `<button data-act="set-lblfmt" data-v="${k}" aria-pressed="${(s.labelFormat || 'thermal') === k}">${l}</button>`).join('')}</div></div>
     <div class="two"><label class="field"><span>اسم المرسل على الملصق</span><input type="text" data-bind="settings.labelSender" value="${esc(s.labelSender || '')}" placeholder="${esc(s.appName || 'كناش')}"></label>
     <label class="field"><span>هاتف المرسل (اختياري)</span><input type="tel" class="ltr" data-bind="settings.labelPhone" value="${esc(s.labelPhone || '')}"></label></div>
     <button class="btn sec2 block" data-act="labels-open">${ic('download', 18)}<span>فتح الملصقات (${labelQueue().length} لم تُطبع)</span></button>`)}
-  ${setSec('sec-goals', 'chart', 'الأهداف المالية', `هدف الشهر ${num(s.monthGoal) ? moneyT(num(s.monthGoal)) : 'غير محدد'} • ${moneyT(num(s.targetEV))} لكل طرد`, `
-    <div class="two"><label class="field"><span>الهدف الصافي للشهر (دج)</span><input type="number" inputmode="decimal" data-bind="settings.monthGoal" data-num value="${num(s.monthGoal) || ''}" placeholder="100000"></label>
-    <label class="field"><span>ربح مستهدف لكل طرد مُرسَل (دج)</span><input type="number" inputmode="decimal" data-bind="settings.targetEV" data-num value="${num(s.targetEV)}"><small>يُستعمل لتقييم المنتجات واقتراح الأسعار.</small></label></div>`)}
-  ${setSec('sec-cloud', 'cloud', 'المزامنة بين الأجهزة', kanachCloud() ? 'عبر كناش السحابي' : jb ? (ui.cloud === 'err' ? 'خطأ في المزامنة' : 'JSONBin') : 'غير مفعّلة', `
-    ${kanachCloud() ? `<div class="note good" style="margin:10px 0">${ic('check', 18)}<div>المزامنة تتم عبر <b>كناش السحابي</b> (القسم الأول في الإعدادات). JSONBin لم يعد ضرورياً.</div></div><button class="btn sec2 block" data-act="cloud-up">${ic('refresh', 18)}<span>زامن الآن</span></button><hr class="sep"><div class="sub" style="margin-bottom:6px">بديل قديم: JSONBin</div>` : ''}
-    <div class="note ${ui.cloud === 'err' ? 'bad' : ui.cloud === 'ok' ? 'good' : ''}" style="margin:10px 0">${ic('cloud', 18)}<div>${jb ? esc(ui.cloudMsg || 'مفعّلة — تُدمج التغييرات حركةً بحركة بين أجهزتك: لا يضيع تعديل جهاز بسبب جهاز آخر، وتُرفع بعد 3 ثوانٍ وتُسحب كل دقيقة ونصف.') : 'غير مفعّلة. أدخل مفتاح JSONBin ومعرّف الـBin لتعمل على الهاتف والحاسوب بنفس البيانات — بلا ضغط أزرار.'}</div></div>
-    <div class="two"><label class="field"><span>X-Master-Key</span><input type="password" class="ltr" autocomplete="off" id="jbKey" placeholder="${jb ? '•••••••• (محفوظ)' : '$2a$10$…'}"></label><label class="field"><span>Bin ID</span><input type="text" class="ltr" autocomplete="off" id="jbId" value="${esc(localStorage.getItem(LS.jbId) || '')}"></label></div>
-    <div class="row wrap-r"><button class="btn sec2 grow" data-act="cloud-save-cfg">حفظ الإعداد</button>${jb ? `<button class="btn sec2 grow" data-act="cloud-up">${ic('upload', 18)}<span>زامن الآن</span></button><button class="btn sec2 grow" data-act="cloud-down">${ic('download', 18)}<span>استبدال بنسخة السحابة</span></button>` : ''}</div>
-    <div class="note warn" style="margin-top:12px">${ic('alert', 18)}<div>بيانات العملاء (أسماء وهواتف) تُرفع إلى هذا الحساب. لا تشارك المفتاح ولا تضعه في ملف منشور على الإنترنت.</div></div>`)}
-  ${setSec('sec-notif', 'bolt', 'التنبيهات', [s.soundAlert ? 'صوت' : '', s.browserNotif ? 'إشعارات' : ''].filter(Boolean).join(' + ') || 'متوقفة', `
-    <div class="sw"><div class="tx"><b>تنبيه صوتي عند وصول تحديث</b><span>رنّة قصيرة عند تسليم، مرتجع، أو وصول بيانات من جهاز آخر</span></div><label class="toggle"><input type="checkbox" data-bind="settings.soundAlert" ${s.soundAlert ? 'checked' : ''} aria-label="تنبيه صوتي"><i></i></label></div>
-    <div class="sw"><div class="tx"><b>إشعار من المتصفح</b><span>يظهر حتى إذا كناش مفتوح في تبويب آخر (يحتاج إذنك مرة واحدة)</span></div><label class="toggle"><input type="checkbox" id="notifToggle" ${s.browserNotif ? 'checked' : ''} aria-label="إشعار المتصفح"><i></i></label></div>`)}
-  ${setSec('sec-backup', 'download', 'نسخ احتياطي', `${S.entries.length} حركة على هذا الجهاز`, `<div class="sub" style="margin:2px 0 12px">الصيغة متوافقة مع نسخ النسخة القديمة.</div>
+  ${grp('البيانات')}
+  ${setSec('sec-backup', 'download', 'نسخ احتياطي واستعادة', `${S.entries.length} حركة على هذا الجهاز`, `<div class="sub" style="margin:2px 0 12px">الصيغة متوافقة مع نسخ النسخة القديمة.</div>
     <div class="row wrap-r"><button class="btn sec2 grow" data-act="backup">${ic('download', 18)}<span>تحميل نسخة (JSON)</span></button><button class="btn sec2 grow" data-act="restore">${ic('upload', 18)}<span>استعادة من ملف</span></button></div><input type="file" id="restoreFile" accept=".json,application/json" hidden>
     <div class="sub" style="margin-top:10px">${S.entries.length} حركة محفوظة على هذا الجهاز.</div>
     <hr class="sep"><div class="row"><b class="grow" style="font-size:14px">نسخ تلقائية داخل المتصفح</b><button class="btn sec2 sm" data-act="snap-now">حفظ نسخة الآن</button></div>
-    <div class="sub" style="margin:2px 0 8px">تُحفظ قبل كل تحديث لكناش وكل أسبوع (آخر 6). الاستعادة لا تغيّر إعداداتك.</div><div id="snapList" class="sub">…</div>`)}
-  ${setSec('sec-assistant', 'chat', 'المساعد الذكي (Claude)', hasKey ? 'مفعّل' : 'اختياري', `<div class="sub" style="margin:2px 0 12px">اختياري. المفتاح يبقى على جهازك ويُرسل إلى Anthropic فقط.</div>
-    <label class="field"><span>Claude API key</span><input type="password" class="ltr" autocomplete="off" id="apiKeyIn" placeholder="${hasKey ? '•••••••• (محفوظ)' : 'sk-ant-…'}"></label>
-    <div class="row"><button class="btn sec2 grow" data-act="apikey-save">حفظ المفتاح</button>${hasKey ? '<button class="btn danger-o" data-act="apikey-del">حذف</button>' : ''}</div>`)}
-  ${setSec('sec-danger', 'trash', 'منطقة الخطر', 'مسح شهر أو كل البيانات', `<div class="row wrap-r" ><button class="btn danger-o grow" data-act="clear-month">مسح شهر</button><button class="btn danger-o grow" data-act="clear-all">حذف كل البيانات</button></div>`)}
+    <div class="sub" style="margin:2px 0 8px">تُحفظ قبل كل تحديث لكناش وكل أسبوع (آخر 6). الاستعادة لا تغيّر إعداداتك.</div><div id="snapList" class="sub">…</div>
+    <hr class="sep"><div class="sub" style="margin-bottom:8px"><b>منطقة الخطر</b> — لا تراجع إلا من نسخة.</div>
+    <div class="row wrap-r"><button class="btn danger-o grow" data-act="clear-month">مسح شهر</button><button class="btn danger-o grow" data-act="clear-all">حذف كل البيانات</button></div>`)}
   </div>`;
 }
-const VIEWS = { home: viewHome, orders: viewOrders, calc: viewCalc, carrier: viewCarrier, reports: viewReports, settings: viewSettings };
+/* مزامنة JSONBin القديمة: تبقى لمن يستعملها، وتختفي مع كناش السحابي */
+function jsonbinHTML() {
+  const jb = !!localStorage.getItem(LS.jbKey);
+  if (kanachCloud() && !jb) return '';
+  return `<details class="acc" style="box-shadow:none;margin-top:10px" ${jb && !kanachCloud() ? 'open' : ''}><summary style="padding:12px 14px;font-size:14px">${ic('cloud', 18)}مزامنة عبر JSONBin${jb ? ' (مفعّلة)' : ' — بديل قديم'}</summary><div class="inner">
+    <div class="note ${ui.cloud === 'err' ? 'bad' : ui.cloud === 'ok' ? 'good' : ''}" style="margin:10px 0">${ic('cloud', 18)}<div>${jb ? esc(ui.cloudMsg || 'مفعّلة — تُدمج التغييرات حركةً بحركة بين أجهزتك: لا يضيع تعديل جهاز بسبب جهاز آخر، وتُرفع بعد 3 ثوانٍ وتُسحب كل دقيقة ونصف.') : 'غير مفعّلة. أدخل مفتاح JSONBin ومعرّف الـBin لتعمل على الهاتف والحاسوب بنفس البيانات — بلا ضغط أزرار.'}</div></div>
+    <div class="two"><label class="field"><span>X-Master-Key</span><input type="password" class="ltr" autocomplete="off" id="jbKey" placeholder="${jb ? '•••••••• (محفوظ)' : '$2a$10$…'}"></label><label class="field"><span>Bin ID</span><input type="text" class="ltr" autocomplete="off" id="jbId" value="${esc(localStorage.getItem(LS.jbId) || '')}"></label></div>
+    <div class="row wrap-r"><button class="btn sec2 grow" data-act="cloud-save-cfg">حفظ الإعداد</button>${jb ? `<button class="btn sec2 grow" data-act="cloud-up">${ic('upload', 18)}<span>زامن الآن</span></button><button class="btn sec2 grow" data-act="cloud-down">${ic('download', 18)}<span>استبدال بنسخة السحابة</span></button>` : ''}</div>
+    <div class="note warn" style="margin-top:12px">${ic('alert', 18)}<div>بيانات العملاء (أسماء وهواتف) تُرفع إلى هذا الحساب. لا تشارك المفتاح ولا تضعه في ملف منشور على الإنترنت.</div></div>  </div></details>`;
+}
+function notifRowsHTML() {
+  const s = S.settings;
+  return `    <div class="sw"><div class="tx"><b>تنبيه صوتي عند وصول تحديث</b><span>رنّة قصيرة عند تسليم، مرتجع، أو وصول بيانات من جهاز آخر</span></div><label class="toggle"><input type="checkbox" data-bind="settings.soundAlert" ${s.soundAlert ? 'checked' : ''} aria-label="تنبيه صوتي"><i></i></label></div>
+    <div class="sw"><div class="tx"><b>إشعار من المتصفح</b><span>يظهر حتى إذا كناش مفتوح في تبويب آخر (يحتاج إذنك مرة واحدة)</span></div><label class="toggle"><input type="checkbox" id="notifToggle" ${s.browserNotif ? 'checked' : ''} aria-label="إشعار المتصفح"><i></i></label></div>`;
+}
+const VIEWS = { home: viewHome, orders: viewOrders, products: viewCalc, reports: viewReports, settings: viewSettings };
 const AFTER = {
-  calc() { $$('[data-c]').forEach(el => { el[el.tagName === 'SELECT' ? 'onchange' : 'oninput'] = () => { calcState()[el.dataset.c] = el.value; calcRefresh(); }; }); },
+  products() { $$('[data-c]').forEach(el => { el[el.tagName === 'SELECT' ? 'onchange' : 'oninput'] = () => { calcState()[el.dataset.c] = el.value; calcRefresh(); }; }); },
   orders() { const i = $('#ordersSearch'); if (i) i.oninput = e => { ui.search = e.target.value; ui.limit = 40; $('#ordersList').innerHTML = ordersListHTML(); }; },
   reports() {
     updateSettleSel();
     const i = $('#crmSearch'); if (i) i.oninput = e => { ui.crmQ = e.target.value; $('#crmList').innerHTML = crmListHTML(); };
-    const m = $('#budMonth'); if (m) m.onchange = e => { ui.budgetMonth = e.target.value || iso().slice(0, 7); render(); };
-    const b = $('#budAmount'); if (b) b.onchange = e => { S.budgets[ui.budgetMonth] = num(e.target.value); persist(); render(); };
-    const c = $('#chatBox'); if (c) c.scrollTop = c.scrollHeight;
-    const ci = $('#chatIn'); if (ci) ci.onkeydown = e => { if (e.key === 'Enter') A['chat-send'](); };
   },
-  carrier() { const d = $('#setupAcc'); if (d) d.ontoggle = () => { ui.openSetup = d.open; }; },
   settings() {
     const sn = $('#srvNotify'); if (sn) sn.onchange = async e => { try { await serverNotify(e.target.checked); toast(e.target.checked ? 'السحابة تراقب Yalidine الآن' : 'أُوقفت المراقبة'); } catch (err) { e.target.checked = !e.target.checked; toast(err.message, { tone: 'bad' }); } };
     snapshots().then(list => { const el = $('#snapList'); if (!el) return;
@@ -2779,7 +2765,7 @@ const FORM_TYPES = [['vonder', 'طلبية Vonder', 'box'], ['sonazone', 'طلب
 
 function newDraft(type = 'vonder') {
   const lv = S.entries.find(e => e.type === 'vonder'), s = S.settings;
-  return { id: null, type, date: iso(), desc: '', tracking: '', product: '', price: lv?.productPrice || s.defPrice, qty: 1, myProfit: lv?.myProfit || s.defProfit,
+  return { id: null, type, date: iso(), desc: '', tracking: '', product: '', price: Math.round(lv?.productPrice || s.defPrice), qty: 1, myProfit: Math.round(lv?.myProfit || s.defProfit),
     seller: lv ? (lv.sellerProfit ?? s.defSeller) : s.defSeller, extra: 0, status: 'pending', net: '', buy: '', sell: '', sqty: 1, amount: '', linkId: '', taxe: s.defTaxe, manual: false, rq: '',
     wid: '', shipType: s.defShip, phone: '', cname: '', paste: '' };
 }
@@ -2837,7 +2823,8 @@ function shipFields() {
 
 function formBody() {
   const t = F.type, edit = !!F.id;
-  let h = edit ? '' : `<div class="seg" role="tablist">${FORM_TYPES.map(([k, l, i]) => `<button data-act="form-type" data-v="${k}" aria-pressed="${t === k}">${ic(i, 16)}${l}</button>`).join('')}</div>`;
+  const sona = S.entries.some(e => e.type === 'sonazone');
+  let h = edit ? '' : `<div class="seg" role="tablist">${FORM_TYPES.filter(([k]) => sona || k !== 'sonazone').map(([k, l, i]) => [k, k === 'vonder' && !sona ? 'طلبية' : l, i]).map(([k, l, i]) => `<button data-act="form-type" data-v="${k}" aria-pressed="${t === k}">${ic(i, 16)}${l}</button>`).join('')}</div>`;
   if (t === 'return') {
     h += `<div class="field"><span>اختر الطلبية المرتجعة</span><input type="search" data-f="rq" placeholder="ابحث بالاسم…" value="${esc(F.rq)}"></div><div class="card list" id="retList" style="max-height:34vh;overflow:auto;margin-bottom:12px"></div>
       <label class="sw" style="padding:0 0 10px"><span class="tx"><b>طلبية غير موجودة (إدخال يدوي)</b></span><span class="toggle"><input type="checkbox" data-f="manual" ${F.manual ? 'checked' : ''}><i></i></span></label>
@@ -3016,7 +3003,7 @@ function openEntry(id) {
 const suggestNet = e => { const c = e.carrier; if (!c?.price) return 0; return Math.round(deriveNet({ source: 'api', price: c.price, deliveryFee: c.deliveryFee || 0, netExact: 0 }).net); };
 
 const A = {
-  go: (d) => go(d.tab, { ...(d.sub ? (d.tab === 'reports' ? { rTab: d.sub } : { scrollTo: 'sec-' + d.sub }) : {}), ...(d.filter ? { filter: d.filter, limit: 40, search: '' } : {}) }),
+  go: (d) => go(d.tab, { ...(d.sub ? (d.tab === 'reports' ? { rTab: d.sub } : d.tab === 'products' ? { calcTab: d.sub } : { scrollTo: 'sec-' + d.sub }) : {}), ...(d.filter ? { filter: d.filter, limit: 40, search: '' } : {}) }),
   'calc-mode': (d) => { calcState().mode = d.v; calcRefresh(); render(); },
   'calc-type': (d) => { calcState().type = d.v; $$('[data-act=calc-type]').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === d.v)); calcRefresh(); },
   'calc-wid': (d) => { calcState().wid = d.v; const sel = $('select[data-c=wid]'); if (sel) sel.value = d.v; calcRefresh(); },
@@ -3123,6 +3110,10 @@ const A = {
     catch (err) { box.innerHTML = `<div class="sub neg" style="padding:8px 0">${esc(err.message)}</div>`; } },
 
   'carrier-sync': () => syncCarrier({ manual: true }),
+  'sync-all': () => {
+    if (!Carrier.configured() && !cloudReady()) { toast('اربط Yalidine من الإعدادات لتتحدّث طلبياتك'); go('settings', { scrollTo: 'sec-yalidine' }); return; }
+    if (Carrier.configured()) syncCarrier({ manual: true }); if (cloudReady()) cloudSync({ manual: !Carrier.configured() }); pollInbox();
+  },
   'carrier-test': async () => { const b = $('.card.pad [data-act=carrier-test]') || document.querySelector('[data-act=carrier-test]'); if (b) { b.disabled = true; b.textContent = 'جارٍ…'; }
     try { const r = await Carrier.test(); saveCarrier(); toast(`الاتصال ناجح — ${r.total} طرد على حسابك`); } catch (err) { toast(err.message, { tone: 'bad' }); } finally { if (b) { b.disabled = false; b.textContent = 'اختبار الاتصال'; } } },
   'carrier-disconnect': async () => { const r = await ask({ title: 'فصل Yalidine؟', body: 'سيُحذف مفتاح الربط من هذا الجهاز. بيانات الطلبيات المحفوظة تبقى كما هي.', ok: 'فصل', danger: true }); if (!r.ok) return; S.carrier.apiId = ''; S.carrier.apiToken = ''; saveCarrier(); clearInterval(syncTimer); render(); },
@@ -3150,17 +3141,11 @@ const A = {
   'r-tab': (d) => { ui.rTab = d.v; render(); },
   'crm-f': (d) => { ui.crmF = d.v; $('#crmList').innerHTML = crmListHTML(); $$('.chips [data-act=crm-f]').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === d.v)); },
   'report-copy': () => copyText(reportText(periodRange(ui.rPeriod))),
-  'budget-add': () => { const desc = $('#budDesc').value.trim(), amt = num($('#budExp').value); if (!desc || amt <= 0) { toast('أدخل السبب والمبلغ', { tone: 'bad' }); return; } S.budgetExp.push({ id: uid(), month: ui.budgetMonth, date: iso(), desc, amount: amt }); persist(); render(); toast('تم تسجيل السحب'); },
-  'budget-del': (d) => { S.budgetExp = S.budgetExp.filter(x => !sameId(x.id, d.id)); persist(); render(); },
-  'chat-q': (d) => { $('#chatIn').value = d.q; A['chat-send'](); },
-  'chat-send': () => sendChat(),
 
   backup: () => downloadBackup(),
   restore: () => $('#restoreFile').click(),
   'clear-month': async () => { const r = await ask({ title: 'مسح شهر كامل؟', body: 'سيُحذف كل حركات الشهر الحالي نهائياً.', ok: 'مسح', danger: true }); if (!r.ok) return; const m = iso().slice(0, 7); S.entries = S.entries.filter(e => !e.date.startsWith(m)); commit(); toast('تم المسح'); },
   'clear-all': async () => { const r = await ask({ title: 'حذف كل البيانات؟', body: 'هذا الإجراء لا يمكن التراجع عنه. نزّل نسخة احتياطية أولاً إن لزم.', ok: 'حذف الكل', danger: true }); if (!r.ok) return; S.entries = []; S.budgetExp = []; S.budgets = {}; commit(); toast('تم حذف كل البيانات'); },
-  'apikey-save': () => { const v = $('#apiKeyIn').value.trim(); if (!v) return; localStorage.setItem(LS.apiKey, v); render(); toast('تم حفظ المفتاح'); },
-  'apikey-del': () => { localStorage.removeItem(LS.apiKey); render(); toast('تم حذف المفتاح'); },
   'cloud-save-cfg': () => { const k = $('#jbKey').value.trim(), id = $('#jbId').value.trim(); if (k) localStorage.setItem(LS.jbKey, k); if (id) localStorage.setItem(LS.jbId, id); initCloud(); render(); toast('تم الحفظ'); },
   'cloud-up': () => cloudSync({ manual: true }),
   'push-open': () => openPush(),
@@ -3271,7 +3256,7 @@ async function handleYalFile(file) {
     if (!parcels.length) { toast('لم أجد أعمدة Yalidine المعروفة في هذا الملف', { tone: 'bad' }); return; }
     const changes = buildChanges(parcels, matchEntry).filter(c => c.kind !== 'none' || !c.entry);
     if (!changes.length) { toast('لا تحديثات جديدة من هذا الملف'); return; }
-    ui.review = { source: 'excel', changes }; go('carrier');
+    ui.review = { source: 'excel', changes }; go('home');
     toast(`تمت قراءة ${parcels.length} سطر — راجع التحديثات أدناه`);
   } catch (err) { toast('تعذّرت قراءة الملف: ' + err.message, { tone: 'bad' }); }
   $('#yalFile').value = '';
@@ -3387,7 +3372,12 @@ async function cloudSync({ manual = false } = {}) {
     if (CLOUD.again) { CLOUD.again = false; setTimeout(() => cloudSync(), 500); }
   }
 }
-function updateCloudBadge() { const b = $('#btnCloud'); if (b) b.innerHTML = `${ic('cloud')}<i class="dot ${ui.cloud}"></i>`; }
+/* زر التحديث في الأعلى: نقطة واحدة تلخّص Yalidine والمزامنة (أحمر إن فشل أحدهما) */
+function syncState() {
+  const y = !Carrier.configured() ? '' : ui.syncing ? 'busy' : S.carrier.lastError ? 'err' : 'ok', c = cloudReady() ? ui.cloud : '', l = [y, c];
+  return l.includes('err') ? 'err' : l.includes('busy') ? 'busy' : l.includes('ok') ? 'ok' : '';
+}
+function updateCloudBadge() { const b = $('#btnCarrier'); if (b) b.innerHTML = `<span class="${ui.syncing || ui.cloud === 'busy' ? 'spin' : ''}" style="display:grid">${ic('refresh')}</span><i class="dot ${syncState()}"></i>`; }
 /* استبدال كامل بنسخة السحابة (زر «تحميل الآن» فقط) */
 async function cloudReplace() {
   try {
@@ -3398,36 +3388,6 @@ async function cloudReplace() {
   render();
 }
 function deviceId() { let d = localStorage.getItem(LS.device); if (!d) { d = uid(); localStorage.setItem(LS.device, d); } return d; }
-
-function buildContext() {
-  const st = computeStats(S.entries), m = computeStats(S.entries.filter(e => inRange(e, periodRange('month'))));
-  const byW = {}; S.entries.filter(Q.returned).forEach(e => { const w = e.yalidineInfo?.wilaya; if (w) byW[w] = (byW[w] || 0) + 1; });
-  const topW = Object.entries(byW).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  return `بيانات صاحب المتجر (كناش — تتبع طلبيات Vonder/FreeVendor عبر Yalidine):
-الإجمالي: ${st.orders.length} طلبية، ${st.delivered.length} مُسلَّمة، ${st.pending.length} معلّقة، ${st.returned.length} مرتجعة.
-صافي الفائدة الكلي: ${Math.round(st.net)} دج. هذا الشهر: ${Math.round(m.net)} دج (${m.delivered.length} مُسلَّمة، نسبة مرتجع ${Math.round(m.returnRate)}%).
-متوسط الفائدة للطلبية المُسلَّمة: ${Math.round(st.avg)} دج.
-أكثر الولايات مرتجعاً: ${topW.map(([w, n]) => `${w} (${n})`).join('، ') || 'لا بيانات'}.
-أجب بالدارجة الجزائرية، مختصر ومباشر، بالأرقام الموجودة فقط دون اختراع أي رقم.`;
-}
-async function sendChat() {
-  const inp = $('#chatIn'), q = inp.value.trim(); if (!q) return;
-  const key = localStorage.getItem(LS.apiKey);
-  ui.chat.push({ r: 'u', t: q }); inp.value = ''; render();
-  if (!key) { ui.chat.push({ r: 'a', t: 'أضف مفتاح Claude API من الإعدادات لتفعيل الإجابة.' }); render(); return; }
-  ui.chat.push({ r: 'a', t: '…' }); render();
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'server-side-fallback-2026-07-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: 'claude-sonnet-5-5', max_tokens: 2000, output_config: { effort: 'low' }, fallbacks: 'default', system: buildContext(), messages: ui.chat.filter(m => m.t !== '…').slice(-10).map(m => ({ role: m.r === 'u' ? 'user' : 'assistant', content: m.t })) }) });
-    const j = await res.json();
-    ui.chat.pop();
-    if (!res.ok) throw new Error(j?.error?.message || 'خطأ في الاتصال');
-    if (j.stop_reason === 'refusal') throw new Error('رفض المساعد هذا السؤال — أعد صياغته.');
-    const txt = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n') || 'لم أفهم، عاود السؤال.';
-    ui.chat.push({ r: 'a', t: txt });
-  } catch (err) { ui.chat.pop(); ui.chat.push({ r: 'a', t: 'تعذّر الاتصال: ' + err.message }); }
-  render();
-}
 
 async function boot() {
   document.documentElement.setAttribute('data-theme', localStorage.getItem(LS.theme) || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));

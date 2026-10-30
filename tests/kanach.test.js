@@ -88,8 +88,9 @@ const eq = (name, got, want) => {
     }), [1, 'risk', true]);
 
     // ---- كل الشاشات تُعرض بلا أخطاء + Escape يغلق النافذة ----
-    for (const tab of ['home', 'orders', 'calc', 'carrier', 'reports', 'settings']) await page.evaluate(t => go(t), tab);
-    for (const r of ['summary', 'customers', 'budget', 'assistant']) await page.evaluate(t => go('reports', { rTab: t }), r);
+    for (const tab of ['home', 'orders', 'products', 'reports', 'settings', 'calc', 'carrier']) await page.evaluate(t => go(t), tab);
+    for (const r of ['summary', 'settle', 'wilayas', 'customers']) await page.evaluate(t => go('reports', { rTab: t }), r);
+    for (const t of ['products', 'perf', 'calc']) await page.evaluate(t => go('products', { calcTab: t }), t);
     await page.evaluate(() => openCallList());
     await page.keyboard.press('Escape');
     eq('Escape يغلق النافذة', await page.evaluate(() => Sheet.isOpen()), false);
@@ -260,7 +261,7 @@ const eq = (name, got, want) => {
       // ساعة: 6000 − 500 = 5500 على 8 طرود = 687.5؛ تسليم 75%؛ تعادل 250/(1000+250)=20%
       return [w.net, w.perShip, w.rate, Math.round(w.be * 100), w.decision, h.net, h.decision, w.w[wilayaIdOf('Djelfa')].r];
     }), [5500, 687.5, 0.75, 20, 'scale', -800, 'stop', 2]);
-    eq('واجهات التقارير الجديدة تُعرض', await page.evaluate(() => { const out = []; for (const t of ['products', 'wilayas', 'summary']) { go('reports', { rTab: t }); out.push(document.querySelector('#view').innerText.length > 50); } openProduct(prodKey('ساعة')); out.push(/ولايات|الولايات/.test(document.querySelector('#sheetBody').innerText)); Sheet.close(); return out; }), [true, true, true, true]);
+    eq('واجهات التقارير الجديدة تُعرض', await page.evaluate(() => { const out = []; for (const [tab, t] of [['products', 'perf'], ['reports', 'wilayas'], ['reports', 'summary']]) { go(tab, tab === 'products' ? { calcTab: t } : { rTab: t }); out.push(document.querySelector('#view').innerText.length > 50); } openProduct(prodKey('ساعة')); out.push(/ولايات|الولايات/.test(document.querySelector('#sheetBody').innerText)); Sheet.close(); return out; }), [true, true, true, true]);
     eq('المهام: منتج خاسر يظهر في الرئيسية', await page.evaluate(() => { go('home'); return /منتج يخسر/.test(document.querySelector('#view').innerText); }), true);
 
     // ---- ملصقات الشحن: نافذة طباعة فيها الباركود والزبون والمبلغ، وتُعلَّم كمطبوعة ----
@@ -274,7 +275,7 @@ const eq = (name, got, want) => {
       await lp.close();
       eq('الملصق عُلِّم كمطبوع', await page.evaluate(() => [!!S.entries[0].labelPrintedAt, labelQueue().length]), [true, 0]);
     }
-    eq('الإعدادات مطوية وتنفتح على القسم المطلوب', await page.evaluate(() => { go('settings', { scrollTo: 'sec-fees' }); return [document.querySelectorAll('details.set').length, document.getElementById('sec-fees').open, document.getElementById('sec-cloud').open]; }), [12, true, false]);
+    eq('الإعدادات مطوية وتنفتح على القسم المطلوب', await page.evaluate(() => { go('settings', { scrollTo: 'sec-fees' }); return [document.querySelectorAll('details.set').length, document.getElementById('sec-fees').open, document.getElementById('sec-app').open]; }), [8, true, false]);
 
     // ---- منتجاتي: سعر الشراء والبيع والعمولة، وملء النموذج تلقائياً ----
     eq('اقتصاديات المنتج', await page.evaluate(() => { const e = productEcon({ cost: 45000, price: 48800 }); return [e.fee, e.profit, Math.round(e.margin * 1000) / 10, e.customer]; }), [2700, 1100, 2.3, 49950]);
@@ -343,7 +344,7 @@ const eq = (name, got, want) => {
     }, [fvRow('000770001', 'En attente de confirmation', 'Sami Mansouri', '0661223344', 'Montre Casio'), fvRow('000770002', 'Confirmé avec le client', 'Nadia', '0770112233', 'Sac cuir')]),
       [1, 1, 'fv-000770001', 'toconfirm', 0, 'pending', true]);
     eq('ما ينتظر التأكيد لا يدخل الأرباح ولا الرفع', await page.evaluate(() => { const st = computeStats(S.entries); return [st.orders.length, st.pending.length, readyToPush().some(e => e.status === 'toconfirm')]; }), [1, 1, false]);
-    eq('تنبيه في الرئيسية', await page.evaluate(() => { go('home'); return document.body.innerText.includes('1 طلبية تنتظر تأكيد الزبون'); }), true);
+    eq('في الرئيسية: خطوة التأكيد بعددها', await page.evaluate(() => { go('home'); const li = document.querySelector('.flow li'); return [li.className, li.querySelector('.n')?.innerText]; }), ['on', '1']);
     eq('رسالة التأكيد بالدارجة وبيانات الطلبية', await page.evaluate(() => { const v = confirmVars(S.entries.find(e => e.vonderId === '000770001')); const m = fillMsg('', v); return [v.name, v.phone, v.wilaya, m.includes('Montre Casio'), m.includes('3\u00A0900'), m.includes('نعم')]; }), ['Sami', '0661223344', 'وهران', true, true, true]);
     await page.evaluate(() => openConfirm());
     eq('شاشة التأكيد', await page.evaluate(() => [document.querySelectorAll('#cfList [data-act=cf-yes]').length, /ما تقوله في المكالمة/.test(document.getElementById('cfList').innerText)]), [1, true]);
@@ -408,6 +409,17 @@ const eq = (name, got, want) => {
       return [r.mine.map(x => x.e.id), r.busy.map(x => x.e.id), /جهازك الآخر/.test(r.busy[0].err)];
     }), [['a1'], ['b2'], true]);
     eq('فلتر «للتأكيد» في الطلبيات', await page.evaluate(() => { go('orders', { filter: 'toconfirm', search: '', limit: 40 }); return document.querySelectorAll('[data-act=cf-yes], .stage.toconfirm, [data-act=open-entry]').length > 0 && document.body.innerText.includes('Client2'); }), true);
+    // ---- الواجهة الجديدة: خمسة تبويبات، مسار الطلبيات في الرئيسية، روابط قديمة تعمل ----
+    eq('التبويبات الخمسة', await page.evaluate(() => [...document.querySelectorAll('#tabbar .tab')].map(b => b.innerText.trim())), ['الرئيسية', 'الطلبيات', 'المنتجات', 'الأرباح', 'الإعدادات']);
+    eq('الشريط العلوي: تحديث ومظهر فقط', await page.evaluate(() => [...document.querySelectorAll('.topbar .iconbtn')].map(b => b.id)), ['btnCarrier', 'btnTheme']);
+    eq('مسار الطلبيات بالترتيب ومعه الأعداد', await page.evaluate(() => { go('home'); return [...document.querySelectorAll('.flow li')].map(li => [li.querySelector('.tx b').innerText, li.className]); }).then(l => l.map(x => x[0])),
+      ['تأكيد مع الزبون', 'رفع إلى Yalidine', 'طباعة الملصقات', 'في الطريق', 'التسديد']);
+    eq('خطوة التأكيد تفتح شاشة التأكيد', await page.evaluate(() => { go('home'); document.querySelector('.flow li:first-child .st').click(); const ok = /تأكيد الطلبيات/.test(document.querySelector('#sheetRoot').innerText); Sheet.close(); return ok; }), true);
+    eq('Yalidine غير مربوط: الخطوة تقود إلى الإعداد', await page.evaluate(() => { const a = S.carrier.apiId; S.carrier.apiId = ''; go('home'); const li = document.querySelectorAll('.flow li')[1], cls = li.className; li.querySelector('.st').click(); const r = [cls, ui.tab, document.getElementById('sec-yalidine').open]; S.carrier.apiId = a; return r; }), ['todo', 'settings', true]);
+    eq('الروابط القديمة: الحاسبة والتوصيل', await page.evaluate(() => { go('calc'); const a = [ui.tab, ui.calcTab]; go('carrier'); return [...a, ui.tab, document.getElementById('sec-yalidine').open]; }), ['products', 'calc', 'settings', true]);
+    eq('مراجعة تحديثات Yalidine تظهر في الرئيسية', await page.evaluate(() => { ui.review = { source: 'excel', changes: [{ kind: 'info', parcel: { tracking: 'yal-X1', status: 'En transit' }, stage: 'transit', entry: null, net: {} }] }; go('home'); const ok = /مراجعة التحديثات/.test(document.querySelector('#view').innerText) && !!document.querySelector('#tabbar .tab .badge-n'); ui.review = null; return ok; }), true);
+    eq('المساعد والميزانية حُذفا من الواجهة', await page.evaluate(() => [typeof viewAssistant, typeof viewBudget, R_TABS().map(t => t[0]).join(',')]), ['undefined', 'undefined', 'summary,settle,wilayas,customers']);
+    eq('نموذج الإضافة بلا كسور طويلة', await page.evaluate(() => { S.entries.unshift({ id: 'fx1', type: 'vonder', status: 'pending', productPrice: 709.433962264, myProfit: 1047.6, date: iso(), desc: 'x', amount: 1 }); go('home'); document.getElementById('fab').click(); const v = [...document.querySelectorAll('#sheetRoot input')].map(i => i.value).filter(v => /\.\d{3,}/.test(v)); Sheet.close(); S.entries.shift(); return v; }), []);
     eq('الشعار في الواجهة', await page.evaluate(() => !!document.querySelector('.topbar .logo svg') && !!document.querySelector('.side .logo svg')), true);
   } catch (e) { failed++; console.error('✗ استثناء:', e); }
   await browser.close(); proxy.kill(); try { require('fs').unlinkSync(inboxFile); } catch {}
